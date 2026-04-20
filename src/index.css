@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme {
+  --color-accent-400: #60a5fa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  --font-sans: 'Inter', 'Noto Sans Thai', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+/* ─── Theme Variables ─────────────────────── */
+:root, [data-theme="light"] {
+  --t-bg: #f0f2f5;
+  --t-bg-card: #ffffff;
+  --t-bg-input: #f5f6f8;
+  --t-bg-hover: #e8eaee;
+  --t-fg: #1e293b;
+  --t-fg-muted: #64748b;
+  --t-fg-dim: #94a3b8;
+  --t-fg-faint: #cbd5e1;
+  --t-border: #e2e8f0;
+  --t-shadow: rgba(0,0,0,0.06);
+  --t-overlay: rgba(0,0,0,0.25);
+  --t-glass-bg: rgba(255,255,255,0.92);
+  --t-glass-border: rgba(0,0,0,0.08);
+  --t-scrollbar: rgba(0,0,0,0.12);
+  --t-range-track: #e2e8f0;
+  --t-range-thumb-border: #cbd5e1;
+  --t-option-bg: #ffffff;
+}
+
+[data-theme="dark"] {
+  --t-bg: #0f1117;
+  --t-bg-card: #1a1d27;
+  --t-bg-input: #1e2130;
+  --t-bg-hover: #262a38;
+  --t-fg: #e8eaed;
+  --t-fg-muted: #9ca3af;
+  --t-fg-dim: #6b7280;
+  --t-fg-faint: #374151;
+  --t-border: #2a2e3a;
+  --t-shadow: rgba(0,0,0,0.3);
+  --t-overlay: rgba(0,0,0,0.6);
+  --t-glass-bg: rgba(20,22,32,0.92);
+  --t-glass-border: rgba(255,255,255,0.06);
+  --t-scrollbar: rgba(255,255,255,0.1);
+  --t-range-track: #2a2e3a;
+  --t-range-thumb-border: #4b5563;
+  --t-option-bg: #1a1d27;
+}
+
+/* ─── Scrollbar ───────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--t-scrollbar); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { opacity: 0.8; }
+
+/* ─── Base resets ─────────────────────────── */
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--t-bg);
+  color: var(--t-fg);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Timer text no-select */
+.timer-display { user-select: none; }
+
+/* Focus mode cursor hide */
+.cursor-hidden { cursor: none !important; }
+.cursor-hidden * { cursor: none !important; }
+
+/* ─── Range slider ────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--t-range-track);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid var(--t-range-thumb-border);
+  transition: transform 0.15s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* ─── Glass panel (settings) ──────────────── */
+.glass {
+  background: var(--t-glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--t-glass-border);
+}
+
+/* ─── Drag handle ─────────────────────────── */
+.drag-handle { cursor: grab; }
+.drag-handle:active { cursor: grabbing; }
+
+/* ─── Theme-aware card ────────────────────── */
+.t-card {
+  background: var(--t-bg-card);
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+}
+
+.t-input {
+  background: var(--t-bg-input);
+  border: 1px solid var(--t-border);
+  color: var(--t-fg);
+  transition: border-color 0.2s;
+}
+.t-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+.t-input::placeholder {
+  color: var(--t-fg-dim);
+}
+
+select.t-input option {
+  background: var(--t-option-bg);
+  color: var(--t-fg);
+}
