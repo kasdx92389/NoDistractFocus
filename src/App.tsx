@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { useStore } from './store'
 import { useTimer } from './hooks/useTimer'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -13,13 +12,13 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { PiPTimer } from './components/PiPTimer'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faClock, faExpand, faGear, faSun, faMoon, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons'
+import { faClock, faExpand, faGear, faSun, faMoon } from '@fortawesome/free-solid-svg-icons'
 
 function App() {
   useTimer()
   useKeyboardShortcuts()
   useCursorHider()
-  const { openPiP, closePiP, isPiP, pipWindow, floating } = usePiP()
+  const { openPiP, closePiP, isPiP, floating } = usePiP()
 
   // Use granular selectors to minimize re-renders
   const darkMode = useStore((s) => s.settings.darkMode)
@@ -109,7 +108,7 @@ function App() {
   const bgStyle: React.CSSProperties = { backgroundColor: 'var(--t-bg)' }
 
   // ─── Render ──────────────────────────────────
-  return (
+  return (<>
     <AnimatePresence mode="wait">
       {focusMode ? (
         <motion.div
@@ -209,7 +208,10 @@ function App() {
             }}
             title="Picture in Picture"
           >
-            <FontAwesomeIcon icon={faArrowUpRightFromSquare} size="sm" />
+            <svg viewBox="0 0 24 18" width="17" height="13" fill="none" aria-hidden="true">
+              <rect x="1" y="1" width="22" height="16" rx="2.5" stroke="currentColor" strokeWidth="2"/>
+              <rect x="12" y="8" width="8" height="6" rx="1" fill="currentColor"/>
+            </svg>
           </button>
 
           {/* Focus mode button */}
@@ -290,33 +292,30 @@ function App() {
 
       {/* Task Done Toast */}
       <TaskDoneToast text={taskDoneText} />
-
-      {/* Floating PiP widget (mobile / unsupported browsers) */}
-      {floating && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 'max(24px, env(safe-area-inset-bottom))',
-            right: 16,
-            width: 220,
-            height: 130,
-            zIndex: 9999,
-            borderRadius: 16,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
-            border: '1px solid var(--t-border)',
-            overflow: 'hidden',
-          }}
-        >
-          <PiPTimer onClose={closePiP} />
-        </div>
-      )}
-
-      {/* Document PiP portal (desktop Chrome/Edge 116+) */}
-      {pipWindow && createPortal(<PiPTimer onClose={closePiP} />, pipWindow.document.body)}
         </motion.div>
       )}
     </AnimatePresence>
-  )
+
+    {/* Floating PiP — rendered outside AnimatePresence so it persists in all modes */}
+    {floating && (
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 'max(24px, env(safe-area-inset-bottom))',
+          right: 16,
+          width: 220,
+          height: 130,
+          zIndex: 9999,
+          borderRadius: 16,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+          border: '1px solid var(--t-border)',
+          overflow: 'hidden',
+        }}
+      >
+        <PiPTimer onClose={closePiP} />
+      </div>
+    )}
+  </>)
 }
 
 function TaskDoneToast({ text }: { text: string | null }) {
