@@ -56,6 +56,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
       {/* Close button */}
       <button
         onClick={onClose}
+        onPointerDown={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
           top: 8,
@@ -110,6 +111,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
       {/* Play / Pause button */}
       <button
         onClick={handleToggle}
+        onPointerDown={(e) => e.stopPropagation()}
         style={{
           marginTop: '4px',
           padding: '8px 28px',

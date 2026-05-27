@@ -129,6 +129,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .drag-handle { cursor: grab; }
 .drag-handle:active { cursor: grabbing; }
 
+/* ─── Draggable PiP widget ────────────────── */
+.pip-widget { cursor: grab; }
+.pip-widget:active { cursor: grabbing; }
+.pip-widget button { cursor: pointer; }
+
 /* ─── Theme-aware card ────────────────────── */
 .t-card {
   background: var(--t-bg-card);

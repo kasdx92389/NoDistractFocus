@@ -20,6 +20,36 @@ function App() {
   useCursorHider()
   const { openPiP, closePiP, isPiP, floating } = usePiP()
 
+  // ─── Draggable PiP ───────────────────────────
+  const PIP_W = 220
+  const PIP_H = 130
+  const [pipPos, setPipPos] = useState<{ x: number; y: number } | null>(null)
+  const dragData = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null)
+
+  useEffect(() => {
+    if (!floating) setPipPos(null)
+  }, [floating])
+
+  const getDefaultPos = () => ({
+    x: window.innerWidth - PIP_W - 16,
+    y: window.innerHeight - PIP_H - 24,
+  })
+
+  const onPipPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const pos = pipPos ?? getDefaultPos()
+    dragData.current = { startX: e.clientX, startY: e.clientY, initX: pos.x, initY: pos.y }
+  }
+
+  const onPipPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragData.current) return
+    const x = Math.max(0, Math.min(window.innerWidth - PIP_W, dragData.current.initX + e.clientX - dragData.current.startX))
+    const y = Math.max(0, Math.min(window.innerHeight - PIP_H, dragData.current.initY + e.clientY - dragData.current.startY))
+    setPipPos({ x, y })
+  }
+
+  const onPipPointerUp = () => { dragData.current = null }
+
   // Use granular selectors to minimize re-renders
   const darkMode = useStore((s) => s.settings.darkMode)
   const fontFamily = useStore((s) => s.settings.fontFamily)
@@ -299,17 +329,25 @@ function App() {
     {/* Floating PiP — rendered outside AnimatePresence so it persists in all modes */}
     {floating && (
       <div
+        className="pip-widget"
+        onPointerDown={onPipPointerDown}
+        onPointerMove={onPipPointerMove}
+        onPointerUp={onPipPointerUp}
         style={{
           position: 'fixed',
-          bottom: 'max(24px, env(safe-area-inset-bottom))',
-          right: 16,
-          width: 220,
-          height: 130,
+          ...(pipPos
+            ? { left: pipPos.x, top: pipPos.y }
+            : { right: 16, bottom: 'max(24px, env(safe-area-inset-bottom))' }),
+          width: PIP_W,
+          height: PIP_H,
           zIndex: 9999,
           borderRadius: 16,
           boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
           border: '1px solid var(--t-border)',
           overflow: 'hidden',
+          cursor: 'grab',
+          userSelect: 'none',
+          touchAction: 'none',
         }}
       >
         <PiPTimer onClose={closePiP} />
