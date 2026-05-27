@@ -14,6 +14,15 @@ function supportsVideoPiP(): boolean {
   )
 }
 
+function clearMediaSession() {
+  if (!('mediaSession' in navigator)) return
+  navigator.mediaSession.playbackState = 'none'
+  navigator.mediaSession.metadata = null
+  for (const action of ['play', 'pause', 'seekbackward', 'seekforward', 'previoustrack', 'nexttrack'] as MediaSessionAction[]) {
+    try { navigator.mediaSession.setActionHandler(action, null) } catch { /* ignored */ }
+  }
+}
+
 export function usePiP() {
   const [floating, setFloating] = useState(false)
   const [videoPiP, setVideoPiP] = useState(false)
@@ -21,6 +30,7 @@ export function usePiP() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const rafRef = useRef<number | null>(null)
+  const prevTitleRef = useRef('')
 
   // ─── Canvas drawing loop ───────────────────────
   const startDrawing = useCallback(() => {
@@ -37,6 +47,7 @@ export function usePiP() {
       const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
       const fontFam = s.settings.fontFamily || 'Inter'
       const dark = s.settings.darkMode
+      const running = s.timerStatus === 'running'
 
       const bgColor   = dark ? '#0f1117' : '#f0f2f5'
       const textColor = dark ? '#ffffff' : '#1e293b'
@@ -44,11 +55,9 @@ export function usePiP() {
       const W = CANVAS_W
       const H = CANVAS_H
 
-      // Background — matches app theme
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, W, H)
 
-      // Timer digits — use JetBrains Mono (loaded in page) + letter-spacing
       ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-3px'
       ctx.fillStyle = textColor
       ctx.font = `700 90px "JetBrains Mono", "${fontFam}", monospace`
@@ -56,6 +65,21 @@ export function usePiP() {
       ctx.textBaseline = 'middle'
       ctx.fillText(timeStr, W / 2, H / 2 + 4)
       ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '0px'
+
+      // Sync Media Session playback state + metadata
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = running ? 'playing' : 'paused'
+        const task = s.tasks.find((t) => t.id === s.activeTaskId)
+        const title = task ? task.title : s.activeMode().name
+        if (prevTitleRef.current !== title) {
+          prevTitleRef.current = title
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title,
+            artist: 'NoDistractFocus',
+            album: 'Focus Timer',
+          })
+        }
+      }
 
       rafRef.current = requestAnimationFrame(draw)
     }
@@ -73,22 +97,17 @@ export function usePiP() {
 
   // ─── Open / Toggle ─────────────────────────────
   const openPiP = useCallback(async () => {
-    // Toggle off
     if (videoPiP) {
       await document.exitPictureInPicture().catch(() => {})
       stopDrawing()
+      clearMediaSession()
       setVideoPiP(false)
       return
     }
-    if (floating) {
-      setFloating(false)
-      return
-    }
+    if (floating) { setFloating(false); return }
 
-    // Try Video PiP (works cross-app on mobile & desktop)
     if (supportsVideoPiP()) {
       try {
-        // Create canvas once
         if (!canvasRef.current) {
           const canvas = document.createElement('canvas')
           canvas.width = CANVAS_W
@@ -96,37 +115,57 @@ export function usePiP() {
           canvasRef.current = canvas
         }
 
-        // Create video once
         if (!videoRef.current) {
           const video = document.createElement('video')
           video.muted = true
           video.playsInline = true
           video.setAttribute('playsinline', '')
+
+          // Keep canvas stream playing while in PiP so the timer keeps updating
+          video.addEventListener('pause', () => {
+            if (document.pictureInPictureElement) video.play().catch(() => {})
+          })
+
           video.addEventListener('leavepictureinpicture', () => {
             stopDrawing()
+            clearMediaSession()
             setVideoPiP(false)
           })
+
           videoRef.current = video
         }
 
-        // Start drawing to canvas
         startDrawing()
-
-        // Feed canvas stream → video → PiP
         const stream = canvasRef.current.captureStream(30)
         videoRef.current.srcObject = stream
         await videoRef.current.play()
+
+        // ── Media Session: native PiP controls → timer ──
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.setActionHandler('play', () => {
+            useStore.getState().setTimerStatus('running')
+            navigator.mediaSession.playbackState = 'playing'
+          })
+          navigator.mediaSession.setActionHandler('pause', () => {
+            useStore.getState().setTimerStatus('paused')
+            navigator.mediaSession.playbackState = 'paused'
+          })
+          // Disable irrelevant seek controls
+          for (const action of ['seekbackward', 'seekforward', 'previoustrack', 'nexttrack'] as MediaSessionAction[]) {
+            try { navigator.mediaSession.setActionHandler(action, null) } catch { /* ignored */ }
+          }
+        }
+
         await videoRef.current.requestPictureInPicture()
         setVideoPiP(true)
         return
       } catch (err) {
         console.warn('Video PiP failed, falling back to floating widget:', err)
         stopDrawing()
-        // fall through
+        clearMediaSession()
       }
     }
 
-    // Fallback: floating widget (within browser)
     setFloating(true)
   }, [videoPiP, floating, startDrawing, stopDrawing])
 
@@ -134,6 +173,7 @@ export function usePiP() {
   const closePiP = useCallback(() => {
     document.exitPictureInPicture().catch(() => {})
     stopDrawing()
+    clearMediaSession()
     setVideoPiP(false)
     setFloating(false)
   }, [stopDrawing])
@@ -142,6 +182,7 @@ export function usePiP() {
   useEffect(() => {
     return () => {
       stopDrawing()
+      clearMediaSession()
       document.exitPictureInPicture().catch(() => {})
     }
   }, [stopDrawing])
