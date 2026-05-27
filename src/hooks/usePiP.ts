@@ -35,33 +35,27 @@ export function usePiP() {
       const mins = Math.floor(total / 60)
       const secs = total % 60
       const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-      const mode = s.activeMode()
-      const running = s.timerStatus === 'running'
-      const accent = mode.color || '#3b82f6'
+      const fontFam = s.settings.fontFamily || 'Inter'
+      const dark = s.settings.darkMode
+
+      const bgColor   = dark ? '#0f1117' : '#f0f2f5'
+      const textColor = dark ? '#ffffff' : '#1e293b'
 
       const W = CANVAS_W
       const H = CANVAS_H
 
-      // Background
-      ctx.fillStyle = '#0f1117'
+      // Background — matches app theme
+      ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, W, H)
 
-      // Accent line at top (mode color)
-      ctx.fillStyle = accent
-      ctx.fillRect(0, 0, W, 5)
-
-      // Status dot — top-left, minimal
-      ctx.fillStyle = running ? '#22c55e' : '#4b5563'
-      ctx.beginPath()
-      ctx.arc(18, 22, 5, 0, Math.PI * 2)
-      ctx.fill()
-
-      // Timer digits — large, centered
-      ctx.fillStyle = '#ffffff'
-      ctx.font = `bold 96px "Courier New", monospace`
+      // Timer digits — use JetBrains Mono (loaded in page) + letter-spacing
+      ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-3px'
+      ctx.fillStyle = textColor
+      ctx.font = `700 90px "JetBrains Mono", "${fontFam}", monospace`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(timeStr, W / 2, H / 2 + 4)
+      ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '0px'
 
       rafRef.current = requestAnimationFrame(draw)
     }
