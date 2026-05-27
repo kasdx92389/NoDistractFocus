@@ -70,6 +70,20 @@ body {
   background: var(--t-bg);
   color: var(--t-fg);
   transition: background-color 0.3s, color 0.3s;
+  /* iOS safe area padding */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ─── Mobile improvements ─────────────────── */
+@media (max-width: 640px) {
+  /* Hide keyboard shortcuts hint on mobile — not useful */
+  .pip-footer-hide p:first-child { display: none; }
+  /* Slightly smaller timer on very small screens */
+  .timer-display { letter-spacing: -2px !important; }
+  /* Tap highlight suppression */
+  button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 /* Timer text no-select */

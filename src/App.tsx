@@ -1,21 +1,25 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore } from './store'
 import { useTimer } from './hooks/useTimer'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCursorHider } from './hooks/useCursorHider'
+import { usePiP } from './hooks/usePiP'
 import { TimerDisplay } from './components/TimerDisplay'
 import { Controls } from './components/Controls'
 import { ModeSelector } from './components/ModeSelector'
 import { TaskList } from './components/TaskList'
 import { SettingsPanel } from './components/SettingsPanel'
+import { PiPTimer } from './components/PiPTimer'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faClock, faExpand, faGear, faSun, faMoon } from '@fortawesome/free-solid-svg-icons'
+import { faClock, faExpand, faGear, faSun, faMoon, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons'
 
 function App() {
   useTimer()
   useKeyboardShortcuts()
   useCursorHider()
+  const { openPiP, closePiP, isPiP, pipWindow, floating } = usePiP()
 
   // Use granular selectors to minimize re-renders
   const darkMode = useStore((s) => s.settings.darkMode)
@@ -194,6 +198,20 @@ function App() {
             <FontAwesomeIcon icon={darkMode ? faSun : faMoon} />
           </button>
 
+          {/* Picture-in-Picture button */}
+          <button
+            onClick={openPiP}
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
+            style={{
+              background: isPiP ? '#3b82f6' : 'var(--t-bg-input)',
+              color: isPiP ? '#fff' : 'var(--t-fg-muted)',
+              border: `1px solid ${isPiP ? '#3b82f6' : 'var(--t-border)'}`,
+            }}
+            title="Picture in Picture"
+          >
+            <FontAwesomeIcon icon={faArrowUpRightFromSquare} size="sm" />
+          </button>
+
           {/* Focus mode button */}
           <button
             id="btn-focus"
@@ -258,7 +276,7 @@ function App() {
       </main>
 
       {/* Footer hint */}
-      <footer className="text-center py-4">
+      <footer className="text-center py-4 pip-footer-hide" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
         <p className="text-xs mb-2" style={{ color: 'var(--t-fg-dim)' }}>
           Press <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]" style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}>Space</kbd> to start · <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]" style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}>F</kbd> focus · <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]" style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}>Ctrl+Space</kbd> settings
         </p>
@@ -272,6 +290,29 @@ function App() {
 
       {/* Task Done Toast */}
       <TaskDoneToast text={taskDoneText} />
+
+      {/* Floating PiP widget (mobile / unsupported browsers) */}
+      {floating && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 'max(24px, env(safe-area-inset-bottom))',
+            right: 16,
+            width: 220,
+            height: 130,
+            zIndex: 9999,
+            borderRadius: 16,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+            border: '1px solid var(--t-border)',
+            overflow: 'hidden',
+          }}
+        >
+          <PiPTimer onClose={closePiP} />
+        </div>
+      )}
+
+      {/* Document PiP portal (desktop Chrome/Edge 116+) */}
+      {pipWindow && createPortal(<PiPTimer onClose={closePiP} />, pipWindow.document.body)}
         </motion.div>
       )}
     </AnimatePresence>

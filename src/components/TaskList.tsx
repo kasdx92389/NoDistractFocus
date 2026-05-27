@@ -29,6 +29,7 @@ export const TaskList = React.memo(function TaskList() {
   const startTaskQueue = useStore((s) => s.startTaskQueue)
   const clearTasks = useStore((s) => s.clearTasks)
   const timerStatus = useStore((s) => s.timerStatus)
+  const setTimeRemaining = useStore((s) => s.setTimeRemaining)
 
   const [newTitle, setNewTitle] = useState('')
   const [newDur, setNewDur] = useState('25')
@@ -190,7 +191,15 @@ export const TaskList = React.memo(function TaskList() {
                   border: isActive ? `2px solid ${task.color || '#3b82f6'}` : '2px solid transparent',
                   opacity: task.completed ? 0.45 : 1,
                 }}
-                onClick={() => setActiveTaskId(isActive ? null : task.id)}
+                onClick={() => {
+                  if (task.completed) {
+                    updateTask(task.id, { completed: false })
+                    setActiveTaskId(task.id)
+                    setTimeRemaining(task.duration)
+                  } else {
+                    setActiveTaskId(isActive ? null : task.id)
+                  }
+                }}
               >
                 {/* Step number / check + color picker */}
                 <div className="relative flex items-center">
