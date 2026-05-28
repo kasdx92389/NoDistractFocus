@@ -16,6 +16,8 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
   const activeMode = useStore((s) => s.activeMode())
   const fontFamily = useStore((s) => s.settings.fontFamily)
   const fontWeight = useStore((s) => s.settings.fontWeight)
+  const focusMode = useStore((s) => s.focusMode)
+  const focusColoredBg = useStore((s) => s.settings.focusColoredBackground)
 
   const [hovered, setHovered] = useState(false)
 
@@ -35,6 +37,10 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
   const modeColor = activeMode.color ?? '#3b82f6'
   const label = (activeTask ? activeTask.title : activeMode.name).toUpperCase()
 
+  const useFocusColor = focusMode && focusColoredBg
+  const pipBg    = useFocusColor ? modeColor : 'var(--t-bg, #0f1117)'
+  const pipText  = useFocusColor ? '#ffffff'  : 'var(--t-fg, #e8eaed)'
+
   const handleToggle = () => setTimerStatus(running ? 'paused' : 'running')
 
   return (
@@ -43,7 +49,8 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
       onMouseLeave={() => setHovered(false)}
       style={{
         fontFamily: `'${fontFamily}', 'Noto Sans Thai', sans-serif`,
-        background: 'var(--t-bg, #0f1117)',
+        background: pipBg,
+        transition: 'background 0.4s ease',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -79,7 +86,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
           fontWeight,
           fontFamily: `'${fontFamily}', sans-serif`,
           lineHeight: 1,
-          color: 'var(--t-fg, #e8eaed)',
+          color: pipText,
           letterSpacing: '-0.025em',
         }}
       >

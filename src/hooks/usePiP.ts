@@ -49,9 +49,11 @@ export function usePiP() {
       const fontW = s.settings.fontWeight ?? 700
       const dark = s.settings.darkMode
       const running = s.timerStatus === 'running'
+      const useFocusColor = s.focusMode && s.settings.focusColoredBackground
+      const modeColor = s.activeMode().color || '#3b82f6'
 
-      const bgColor   = dark ? '#0f1117' : '#f0f2f5'
-      const textColor = dark ? '#ffffff' : '#1e293b'
+      const bgColor   = useFocusColor ? modeColor : (dark ? '#0f1117' : '#f0f2f5')
+      const textColor = useFocusColor ? '#ffffff'  : (dark ? '#ffffff' : '#1e293b')
 
       const W = CANVAS_W
       const H = CANVAS_H
