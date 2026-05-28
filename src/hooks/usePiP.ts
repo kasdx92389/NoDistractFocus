@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useStore } from '../store'
 
-const CANVAS_W = 400
-const CANVAS_H = 240
+const CANVAS_W = 1920
+const CANVAS_H = 1080
+const SCALE = CANVAS_H / 240
 
 function supportsVideoPiP(): boolean {
   return (
@@ -61,12 +62,12 @@ export function usePiP() {
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, W, H)
 
-      ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-3px'
+      ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.round(-3 * SCALE)}px`
       ctx.fillStyle = textColor
-      ctx.font = `${fontW} 90px "${fontFam}", sans-serif`
+      ctx.font = `${fontW} ${Math.round(90 * SCALE)}px "${fontFam}", sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(timeStr, W / 2, H / 2 + 4)
+      ctx.fillText(timeStr, W / 2, H / 2 + Math.round(4 * SCALE))
       ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '0px'
 
       // Sync Media Session playback state + metadata
