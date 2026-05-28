@@ -46,6 +46,7 @@ export function usePiP() {
       const secs = total % 60
       const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
       const fontFam = s.settings.fontFamily || 'Inter'
+      const fontW = s.settings.fontWeight ?? 700
       const dark = s.settings.darkMode
       const running = s.timerStatus === 'running'
 
@@ -60,7 +61,7 @@ export function usePiP() {
 
       ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-3px'
       ctx.fillStyle = textColor
-      ctx.font = `700 90px "JetBrains Mono", "${fontFam}", monospace`
+      ctx.font = `${fontW} 90px "${fontFam}", sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(timeStr, W / 2, H / 2 + 4)

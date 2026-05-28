@@ -18,11 +18,11 @@ export const TimerDisplay = React.memo(function TimerDisplay() {
   return (
     <div id="timer-display" className="flex items-center justify-center">
       <div
-        className="timer-display font-mono tracking-tight"
+        className="timer-display tracking-tight"
         style={{
           fontSize: `${timerFontSize}px`,
           fontWeight,
-          fontFamily: `'${fontFamily}', 'JetBrains Mono', monospace`,
+          fontFamily: `'${fontFamily}', sans-serif`,
           color: 'var(--t-fg)',
           lineHeight: 1,
         }}

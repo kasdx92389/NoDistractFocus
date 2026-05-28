@@ -15,6 +15,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
   const tasks = useStore((s) => s.tasks)
   const activeMode = useStore((s) => s.activeMode())
   const fontFamily = useStore((s) => s.settings.fontFamily)
+  const fontWeight = useStore((s) => s.settings.fontWeight)
 
   const [hovered, setHovered] = useState(false)
 
@@ -75,11 +76,11 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
       <div
         style={{
           fontSize: '50px',
-          fontWeight: 700,
-          fontFamily: `'${fontFamily}', 'JetBrains Mono', monospace`,
+          fontWeight,
+          fontFamily: `'${fontFamily}', sans-serif`,
           lineHeight: 1,
           color: 'var(--t-fg, #e8eaed)',
-          letterSpacing: '-2px',
+          letterSpacing: '-0.025em',
         }}
       >
         {displayTime}
