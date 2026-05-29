@@ -100,6 +100,12 @@ export const TaskList = React.memo(function TaskList() {
       id="task-list"
       className="w-full max-w-lg mx-auto px-5 py-4 rounded-2xl"
       style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)' }}
+      onClick={(e) => {
+        // Close editing mode when clicking outside the form
+        if (editingTaskId && (e.target as HTMLElement).id === 'task-list') {
+          handleCancelEdit()
+        }
+      }}
     >
       {/* Summary */}
       {incomplete.length > 0 && (
@@ -111,7 +117,7 @@ export const TaskList = React.memo(function TaskList() {
       )}
 
       {/* Add task row */}
-      <div className="flex gap-2 mb-2">
+      <div className="flex gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
         <div className="flex-1 flex gap-2">
           <input
             type="text"
@@ -144,21 +150,11 @@ export const TaskList = React.memo(function TaskList() {
             <FontAwesomeIcon icon={faPlus} size="xs" />
             {editingTaskId ? 'Save' : 'Add'}
           </motion.button>
-          {editingTaskId && (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={handleCancelEdit}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-1.5 transition-colors"
-              style={{ background: 'var(--t-bg-input)', color: 'var(--t-fg)' }}
-            >
-              <FontAwesomeIcon icon={faXmark} size="xs" />
-            </motion.button>
-          )}
         </div>
       </div>
 
       {/* Quick-add breaks — full width matching above row */}
-      <div className={`flex gap-2 ${incomplete.length > 0 || tasks.length > 0 ? 'mb-3' : ''}`}>
+      <div className={`flex gap-2 ${incomplete.length > 0 || tasks.length > 0 ? 'mb-3' : ''}`} onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => { addTask('Break', 'break', parseDur(newDur || '5')); setNewDur('25') }}
           className="flex-1 py-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
@@ -181,7 +177,7 @@ export const TaskList = React.memo(function TaskList() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           whileTap={{ scale: 0.97 }}
-          onClick={startTaskQueue}
+          onClick={(e) => { e.stopPropagation(); startTaskQueue() }}
           className="w-full mb-4 py-2.5 rounded-xl text-white flex items-center justify-center"
           style={{ background: '#3b82f6' }}
         >
@@ -190,7 +186,7 @@ export const TaskList = React.memo(function TaskList() {
       )}
 
       {/* Task list */}
-      <div className="flex flex-col gap-2 max-h-72 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-2 max-h-72 overflow-y-auto pr-1" onClick={(e) => e.stopPropagation()}>
         <AnimatePresence>
           {tasks.map((task, idx) => {
             const isActive = activeTaskId === task.id
@@ -279,7 +275,7 @@ export const TaskList = React.memo(function TaskList() {
       {/* Clear all */}
       {tasks.length > 0 && (
         <button
-          onClick={clearTasks}
+          onClick={(e) => { e.stopPropagation(); clearTasks() }}
           className="mt-3 w-full py-1.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
           style={{ color: 'var(--t-fg-dim)' }}
         >
