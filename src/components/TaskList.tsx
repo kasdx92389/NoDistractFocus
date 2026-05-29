@@ -128,39 +128,33 @@ export const TaskList = React.memo(function TaskList() {
 
       {/* Add task row */}
       <div ref={editFormRef} className="flex gap-2 mb-2" data-interactive="form">
-        <div className="flex-1 flex gap-2">
-          <input
-            type="text"
-            id="task-input"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            placeholder="Task name..."
-            className="flex-1 t-input rounded-xl px-4 py-2.5 text-sm"
-          />
-          <div className="flex items-stretch h-10">
-            <input
-              type="text"
-              value={newDur}
-              onChange={(e) => setNewDur(e.target.value)}
-              onFocus={(e) => e.target.select()}
-              placeholder="min"
-              className="w-9 t-input px-1 text-xs text-center"
-              style={{ borderRadius: '10px' }}
-            />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={handleAdd}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium text-white flex items-center gap-1.5"
-            style={{ backgroundColor: '#3b82f6' }}
-          >
-            <FontAwesomeIcon icon={faPlus} size="xs" />
-            {editingTaskId ? 'Save' : 'Add'}
-          </motion.button>
-        </div>
+        <input
+          type="text"
+          id="task-input"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          placeholder="@"
+          className="flex-1 t-input rounded-xl px-4 py-2.5 text-sm"
+        />
+        <input
+          type="text"
+          value={newDur}
+          onChange={(e) => setNewDur(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          placeholder="min"
+          className="w-16 t-input px-2 text-sm text-center"
+          style={{ borderRadius: '10px' }}
+        />
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={handleAdd}
+          className="px-4 py-2.5 rounded-xl text-sm font-medium text-white flex items-center gap-1.5"
+          style={{ backgroundColor: '#3b82f6' }}
+        >
+          <FontAwesomeIcon icon={faPlus} size="xs" />
+          {editingTaskId ? 'Save' : 'Add'}
+        </motion.button>
       </div>
 
       {/* Quick-add breaks — full width matching above row */}
@@ -196,7 +190,7 @@ export const TaskList = React.memo(function TaskList() {
       )}
 
       {/* Task list */}
-      <div className="flex flex-col gap-2 max-h-72 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-2 overflow-y-auto pr-1" style={{ maxHeight: '22rem' }}>
         <AnimatePresence>
           {tasks.map((task, idx) => {
             const isActive = activeTaskId === task.id
