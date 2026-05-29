@@ -101,8 +101,8 @@ export const TaskList = React.memo(function TaskList() {
       className="w-full max-w-lg mx-auto px-5 py-4 rounded-2xl"
       style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)' }}
       onClick={(e) => {
-        // Close editing mode when clicking outside the form
-        if (editingTaskId && (e.target as HTMLElement).id === 'task-list') {
+        // Close editing mode when clicking anywhere
+        if (editingTaskId) {
           handleCancelEdit()
         }
       }}
@@ -204,7 +204,8 @@ export const TaskList = React.memo(function TaskList() {
                   border: isActive ? `2px solid ${task.color || '#3b82f6'}` : '2px solid transparent',
                   opacity: task.completed ? 0.45 : 1,
                 }}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation()
                   handleTaskClick(task)
                 }}
               >
