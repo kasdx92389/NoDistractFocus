@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store'
+import type { Task } from '../types'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCheck, faPlus, faPlay, faCoffee, faMugHot, faXmark, faChevronUp, faChevronDown } from '@fortawesome/free-solid-svg-icons'
+import { faCheck, faPlus, faPlay, faCoffee, faMugHot, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 const fmtDur = (s: number) => {
   const m = Math.floor(s / 60)
@@ -33,8 +34,7 @@ export const TaskList = React.memo(function TaskList() {
 
   const [newTitle, setNewTitle] = useState('')
   const [newDur, setNewDur] = useState('25')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editText, setEditText] = useState('')
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
   const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const colorPickerRef = useRef<HTMLDivElement>(null)
@@ -57,15 +57,37 @@ export const TaskList = React.memo(function TaskList() {
 
   const handleAdd = () => {
     const title = newTitle.trim() || 'Task'
-    addTask(title, 'task', parseDur(newDur))
+    
+    if (editingTaskId) {
+      // Update existing task
+      updateTask(editingTaskId, { title, duration: parseDur(newDur) })
+      setEditingTaskId(null)
+    } else {
+      // Add new task
+      addTask(title, 'task', parseDur(newDur))
+    }
+    
     setNewTitle('')
     setNewDur('25')
     ;(document.activeElement as HTMLElement)?.blur()
   }
 
-  const saveEdit = (id: string) => {
-    if (editText.trim()) updateTask(id, { title: editText.trim() })
-    setEditingId(null)
+  const handleTaskClick = (task: Task) => {
+    // Load task into the form for editing
+    setNewTitle(task.title)
+    setNewDur(String(Math.floor(task.duration / 60)))
+    setEditingTaskId(task.id)
+    // Focus on the input field
+    setTimeout(() => {
+      const input = document.getElementById('task-input') as HTMLInputElement
+      if (input) input.focus()
+    }, 0)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingTaskId(null)
+    setNewTitle('')
+    setNewDur('25')
   }
 
   const incomplete = tasks.filter((t) => !t.completed)
@@ -108,36 +130,31 @@ export const TaskList = React.memo(function TaskList() {
               onFocus={(e) => e.target.select()}
               placeholder="min"
               className="w-9 t-input px-1 text-xs text-center"
-              style={{ borderRadius: '10px 0 0 10px', borderRight: 'none' }}
+              style={{ borderRadius: '10px' }}
             />
-            <div className="flex flex-col w-5" style={{ border: '1px solid var(--t-border)', borderLeft: 'none', borderRadius: '0 10px 10px 0', overflow: 'hidden' }}>
-              <button
-                onClick={() => setNewDur(String((parseInt(newDur) || 0) + 1))}
-                className="flex-1 flex items-center justify-center transition-colors"
-                style={{ background: 'var(--t-bg-input)', color: 'var(--t-fg-dim)' }}
-              >
-                <FontAwesomeIcon icon={faChevronUp} style={{ fontSize: 7 }} />
-              </button>
-              <div style={{ height: 1, background: 'var(--t-border)' }} />
-              <button
-                onClick={() => setNewDur(String(Math.max(1, (parseInt(newDur) || 0) - 1)))}
-                className="flex-1 flex items-center justify-center transition-colors"
-                style={{ background: 'var(--t-bg-input)', color: 'var(--t-fg-dim)' }}
-              >
-                <FontAwesomeIcon icon={faChevronDown} style={{ fontSize: 7 }} />
-              </button>
-            </div>
           </div>
         </div>
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={handleAdd}
-          className="px-4 py-2.5 rounded-xl text-sm font-medium text-white flex items-center gap-1.5"
-          style={{ backgroundColor: '#3b82f6' }}
-        >
-          <FontAwesomeIcon icon={faPlus} size="xs" />
-          Add
-        </motion.button>
+        <div className="flex gap-2">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleAdd}
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-white flex items-center gap-1.5"
+            style={{ backgroundColor: '#3b82f6' }}
+          >
+            <FontAwesomeIcon icon={faPlus} size="xs" />
+            {editingTaskId ? 'Save' : 'Add'}
+          </motion.button>
+          {editingTaskId && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handleCancelEdit}
+              className="px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-1.5 transition-colors"
+              style={{ background: 'var(--t-bg-input)', color: 'var(--t-fg)' }}
+            >
+              <FontAwesomeIcon icon={faXmark} size="xs" />
+            </motion.button>
+          )}
+        </div>
       </div>
 
       {/* Quick-add breaks — full width matching above row */}
@@ -192,13 +209,7 @@ export const TaskList = React.memo(function TaskList() {
                   opacity: task.completed ? 0.45 : 1,
                 }}
                 onClick={() => {
-                  if (task.completed) {
-                    updateTask(task.id, { completed: false })
-                    setActiveTaskId(task.id)
-                    setTimeRemaining(task.duration)
-                  } else {
-                    setActiveTaskId(isActive ? null : task.id)
-                  }
+                  handleTaskClick(task)
                 }}
               >
                 {/* Step number / check + color picker */}
@@ -236,34 +247,15 @@ export const TaskList = React.memo(function TaskList() {
                 )}
 
                 {/* Title */}
-                {editingId === task.id ? (
-                  <input
-                    autoFocus
-                    type="text"
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    onBlur={() => saveEdit(task.id)}
-                    onKeyDown={(e) => e.key === 'Enter' && saveEdit(task.id)}
-                    className="flex-1 bg-transparent text-[13px] py-0.5 focus:outline-none"
-                    style={{ color: 'var(--t-fg)', borderBottom: '1px solid var(--t-border)' }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span
-                    className={`flex-1 text-[13px] ${isBreak ? '' : 'font-medium'}`}
-                    style={{
-                      color: isBreak ? 'var(--t-fg-muted)' : 'var(--t-fg)',
-                      textDecoration: task.completed ? 'line-through' : 'none',
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation()
-                      setEditingId(task.id)
-                      setEditText(task.title)
-                    }}
-                  >
-                    {task.title}
-                  </span>
-                )}
+                <span
+                  className={`flex-1 text-[13px] ${isBreak ? '' : 'font-medium'}`}
+                  style={{
+                    color: isBreak ? 'var(--t-fg-muted)' : 'var(--t-fg)',
+                    textDecoration: task.completed ? 'line-through' : 'none',
+                  }}
+                >
+                  {task.title}
+                </span>
 
                 {/* Duration & Delete */}
                 <div className="ml-auto flex items-center gap-2">
