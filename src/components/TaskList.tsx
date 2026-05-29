@@ -38,6 +38,7 @@ export const TaskList = React.memo(function TaskList() {
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
   const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const colorPickerRef = useRef<HTMLDivElement>(null)
+  const editFormRef = useRef<HTMLDivElement>(null)
 
   const TASK_COLORS = [
     '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
@@ -54,6 +55,21 @@ export const TaskList = React.memo(function TaskList() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [colorPickerId])
+
+  // Global click handler: cancel edit when clicking anywhere outside form or task rows
+  useEffect(() => {
+    if (!editingTaskId) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      // Keep editing if clicked inside the form or a task row (data-interactive)
+      if (editFormRef.current && editFormRef.current.contains(target)) return
+      const taskRow = (target as HTMLElement).closest?.('[data-interactive="task"]')
+      if (taskRow) return
+      handleCancelEdit()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [editingTaskId])
 
   const handleAdd = () => {
     const title = newTitle.trim() || 'Task'
@@ -100,17 +116,6 @@ export const TaskList = React.memo(function TaskList() {
       id="task-list"
       className="w-full max-w-lg mx-auto px-5 py-4 rounded-2xl"
       style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)' }}
-      onClick={(e) => {
-        // Close editing mode when clicking non-interactive elements
-        if (editingTaskId) {
-          const target = e.target as HTMLElement
-          // Don't cancel if clicking on interactive elements (buttons, inputs) or marked areas
-          const isInteractive = target.closest('button, input, [data-interactive]')
-          if (!isInteractive) {
-            handleCancelEdit()
-          }
-        }
-      }}
     >
       {/* Summary */}
       {incomplete.length > 0 && (
@@ -122,7 +127,7 @@ export const TaskList = React.memo(function TaskList() {
       )}
 
       {/* Add task row */}
-      <div className="flex gap-2 mb-2" data-interactive="form">
+      <div ref={editFormRef} className="flex gap-2 mb-2" data-interactive="form">
         <div className="flex-1 flex gap-2">
           <input
             type="text"
