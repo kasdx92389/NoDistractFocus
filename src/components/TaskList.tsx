@@ -104,8 +104,8 @@ export const TaskList = React.memo(function TaskList() {
         // Close editing mode when clicking non-interactive elements
         if (editingTaskId) {
           const target = e.target as HTMLElement
-          // Don't cancel if clicking on interactive elements
-          const isInteractive = target.closest('button, input, [data-interactive="true"]')
+          // Don't cancel if clicking on interactive elements (buttons, inputs) or marked areas
+          const isInteractive = target.closest('button, input, [data-interactive]')
           if (!isInteractive) {
             handleCancelEdit()
           }
@@ -122,7 +122,7 @@ export const TaskList = React.memo(function TaskList() {
       )}
 
       {/* Add task row */}
-      <div className="flex gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex gap-2 mb-2" data-interactive="form">
         <div className="flex-1 flex gap-2">
           <input
             type="text"
@@ -204,6 +204,7 @@ export const TaskList = React.memo(function TaskList() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, x: -20, height: 0 }}
                 className="group flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all"
+                data-interactive="task"
                 style={{
                   background: isActive ? 'var(--t-bg-hover)' : 'var(--t-bg-input)',
                   border: isActive ? `2px solid ${task.color || '#3b82f6'}` : '2px solid transparent',
