@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useStore } from '../store'
 import type { Task } from '../types'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCheck, faPlus, faPlay, faCoffee, faMugHot, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faCheck, faPlus, faPlay, faCoffee, faMugHot, faXmark, faKeyboard } from '@fortawesome/free-solid-svg-icons'
 
 const fmtDur = (s: number) => {
   const m = Math.floor(s / 60)
@@ -30,6 +30,7 @@ export const TaskList = React.memo(function TaskList() {
   const startTaskQueue = useStore((s) => s.startTaskQueue)
   const clearTasks = useStore((s) => s.clearTasks)
   const timerStatus = useStore((s) => s.timerStatus)
+  const setTimerStatus = useStore((s) => s.setTimerStatus)
   const setTimeRemaining = useStore((s) => s.setTimeRemaining)
 
   const [newTitle, setNewTitle] = useState('')
@@ -37,8 +38,11 @@ export const TaskList = React.memo(function TaskList() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
   const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  // Keyboard navigation: index into full tasks array
+  const [kbIndex, setKbIndex] = useState<number | null>(null)
   const colorPickerRef = useRef<HTMLDivElement>(null)
   const editFormRef = useRef<HTMLDivElement>(null)
+  const taskListRef = useRef<HTMLDivElement>(null)
 
   const TASK_COLORS = [
     '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
@@ -110,6 +114,70 @@ export const TaskList = React.memo(function TaskList() {
   const totalSecs = incomplete.reduce((a, t) => a + t.duration, 0)
   const totalMin = Math.ceil(totalSecs / 60)
   const isQueueRunning = timerStatus === 'running' && activeTaskId != null
+
+  // ── Keyboard navigation ────────────────────────────────────────────────
+  const handleKeyNav = useCallback((e: KeyboardEvent) => {
+    // Only handle when not typing in an input/textarea
+    const tag = (e.target as HTMLElement).tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault() // prevent page scroll
+      if (tasks.length === 0) return
+      setKbIndex((prev) => {
+        if (prev === null) return e.key === 'ArrowDown' ? 0 : tasks.length - 1
+        if (e.key === 'ArrowDown') return Math.min(prev + 1, tasks.length - 1)
+        return Math.max(prev - 1, 0)
+      })
+    }
+
+    if (e.key === 'Enter' && kbIndex !== null) {
+      e.preventDefault()
+      const task = tasks[kbIndex]
+      if (!task) return
+      // Mark all tasks before this one as completed, unmark from this one onward
+      tasks.forEach((t, i) => {
+        if (i < kbIndex && !t.completed) updateTask(t.id, { completed: true })
+        if (i >= kbIndex && t.completed) updateTask(t.id, { completed: false })
+      })
+      // Start timer from the selected task
+      setActiveTaskId(task.id)
+      setTimeRemaining(task.duration)
+      useStore.setState({ timerStatus: 'running' })
+      setKbIndex(null)
+    }
+
+    // R = Reset timer (only when paused or idle)
+    if ((e.key === 'r' || e.key === 'R') && timerStatus !== 'running') {
+      e.preventDefault()
+      // Determine which task's duration to reset to
+      const targetTask =
+        kbIndex !== null ? tasks[kbIndex] : tasks.find((t) => t.id === activeTaskId)
+      if (targetTask) {
+        setActiveTaskId(targetTask.id)
+        setTimeRemaining(targetTask.duration)
+        setTimerStatus('idle')
+      }
+      setKbIndex(null)
+    }
+
+    if (e.key === 'Escape') {
+      setKbIndex(null)
+    }
+  }, [tasks, kbIndex, timerStatus, activeTaskId, updateTask, setActiveTaskId, setTimeRemaining, setTimerStatus])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyNav)
+    return () => window.removeEventListener('keydown', handleKeyNav)
+  }, [handleKeyNav])
+
+  // Auto-scroll the highlighted task into view
+  useEffect(() => {
+    if (kbIndex === null || !taskListRef.current) return
+    const rows = taskListRef.current.querySelectorAll('[data-interactive="task"]')
+    const el = rows[kbIndex] as HTMLElement | undefined
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [kbIndex])
 
   return (
     <div
@@ -189,8 +257,21 @@ export const TaskList = React.memo(function TaskList() {
         </motion.button>
       )}
 
+      {/* Keyboard hint */}
+      {tasks.length > 0 && kbIndex === null && !isQueueRunning && (
+        <div className="flex items-center justify-center gap-1.5 mb-2 py-1 rounded-lg text-[10px]" style={{ color: 'var(--t-fg-dim)', opacity: 0.55 }}>
+          <FontAwesomeIcon icon={faKeyboard} style={{ fontSize: 9 }} />
+          <span>↑↓ เลื่อน · Enter เริ่ม</span>
+        </div>
+      )}
+      {kbIndex !== null && (
+        <div className="flex items-center justify-center gap-1.5 mb-2 py-1.5 rounded-lg text-[11px] font-medium" style={{ color: '#3b82f6', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}>
+          <span>↑↓ เลื่อน · Enter เริ่มจาก task นี้ · Esc ยกเลิก</span>
+        </div>
+      )}
+
       {/* Task list */}
-      <div className="flex flex-col gap-2 overflow-y-auto pr-1" style={{ maxHeight: '22rem' }}>
+      <div ref={taskListRef} className="flex flex-col gap-2 overflow-y-auto pr-1" style={{ maxHeight: '22rem' }}>
         <AnimatePresence>
           {tasks.map((task, idx) => {
             const isActive = activeTaskId === task.id
@@ -206,8 +287,13 @@ export const TaskList = React.memo(function TaskList() {
                 data-interactive="task"
                 style={{
                   background: isActive ? 'var(--t-bg-hover)' : 'var(--t-bg-input)',
-                  border: isActive ? `2px solid ${task.color || '#3b82f6'}` : '2px solid transparent',
+                  border: kbIndex === idx
+                    ? '2px solid #f59e0b'
+                    : isActive
+                    ? `2px solid ${task.color || '#3b82f6'}`
+                    : '2px solid transparent',
                   opacity: task.completed ? 0.45 : 1,
+                  boxShadow: kbIndex === idx ? '0 0 0 3px rgba(245,158,11,0.15)' : undefined,
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
