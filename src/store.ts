@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AppSettings, Task, TaskType, Preset, SessionRecord, TimerStatus, TimerMode, LayoutBlock, KeyBinding } from './types'
+import type { AppSettings, Task, TaskType, Preset, SessionRecord, TimerStatus, TimerMode } from './types'
 import { defaultSettings, defaultKeyBindings, builtInPresets } from './defaults'
 
 // ─── Helpers ─────────────────────────────────────
@@ -62,10 +62,6 @@ interface AppStore {
   deleteTimerMode: (id: string) => void
   reorderTimerModes: (modes: TimerMode[]) => void
   setActiveModeIndex: (i: number) => void
-
-  // Layout
-  reorderLayout: (blocks: LayoutBlock[]) => void
-  toggleLayoutBlock: (id: string) => void
 
   // Key bindings
   updateKeyBinding: (action: string, key: string) => void
@@ -301,19 +297,6 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      // ─── Layout ────────────────────────────
-      reorderLayout: (blocks) =>
-        set((s) => ({ settings: { ...s.settings, layoutBlocks: blocks } })),
-      toggleLayoutBlock: (id) =>
-        set((s) => ({
-          settings: {
-            ...s.settings,
-            layoutBlocks: s.settings.layoutBlocks.map((b) =>
-              b.id === id ? { ...b, visible: !b.visible } : b
-            ),
-          },
-        })),
-
       // ─── Key Bindings ──────────────────────
       updateKeyBinding: (action, key) =>
         set((s) => ({
@@ -326,28 +309,8 @@ export const useStore = create<AppStore>()(
         })),
 
       // ─── Theme Toggle ────────────────────
-      toggleDarkMode: () => {
-        const isDark = get().settings.darkMode
-        if (isDark) {
-          set((s) => ({
-            settings: {
-              ...s.settings,
-              darkMode: false,
-              backgroundColor: '#f0f2f5',
-              textColor: '#1e293b',
-            },
-          }))
-        } else {
-          set((s) => ({
-            settings: {
-              ...s.settings,
-              darkMode: true,
-              backgroundColor: '#0f1117',
-              textColor: '#e8eaed',
-            },
-          }))
-        }
-      },
+      toggleDarkMode: () =>
+        set((s) => ({ settings: { ...s.settings, darkMode: !s.settings.darkMode } })),
 
       // ─── Helper ────────────────────────
       activeMode: () => {
@@ -377,7 +340,6 @@ export const useStore = create<AppStore>()(
           const s = data.settings || {}
           data.settings = {
             ...s,
-            colorThemeId: s.colorThemeId || 'pomodo',
             darkModeWhenRunning: s.darkModeWhenRunning ?? false,
           }
         }

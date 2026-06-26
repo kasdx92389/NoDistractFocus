@@ -198,22 +198,22 @@ function App() {
         >
       {/* Top bar - clean like reference */}
       <header
-        className="flex items-center justify-between px-6 py-3"
+        className="flex items-center justify-between gap-2 px-3 sm:px-6 py-3"
         style={{ background: 'var(--t-bg-card)', borderBottom: '1px solid var(--t-border)' }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-white"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-white shrink-0"
             style={{ background: '#3b82f6' }}
           >
             <FontAwesomeIcon icon={faClock} size="sm" />
           </div>
-          <h1 className="text-base font-bold" style={{ color: 'var(--t-fg)' }}>
+          <h1 className="text-base font-bold truncate" style={{ color: 'var(--t-fg)' }}>
             NoDistractFocus
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Theme toggle */}
           <button
             onClick={toggleDarkMode}

@@ -20,7 +20,7 @@ export const ModeSelector = React.memo(function ModeSelector() {
   return (
     <div
       id="mode-selector"
-      className="flex items-center gap-1 p-1.5 rounded-2xl"
+      className="flex flex-wrap items-center justify-center gap-1 p-1.5 rounded-2xl max-w-[calc(100vw-2rem)]"
       style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)' }}
     >
       {timerModes.map((mode, i) => (

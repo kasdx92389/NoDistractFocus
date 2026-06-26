@@ -47,6 +47,8 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      // ponytail: touch devices have no hover — tap toggles the control overlay
+      onClick={() => setHovered((h) => !h)}
       style={{
         fontFamily: `'${fontFamily}', 'Noto Sans Thai', sans-serif`,
         background: pipBg,
@@ -139,7 +141,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
 
         {/* Play / Pause */}
         <button
-          onClick={handleToggle}
+          onClick={(e) => { e.stopPropagation(); handleToggle() }}
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             marginTop: 2,
@@ -164,7 +166,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
 
         {/* Close */}
         <button
-          onClick={onClose}
+          onClick={(e) => { e.stopPropagation(); onClose() }}
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',

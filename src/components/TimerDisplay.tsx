@@ -20,7 +20,8 @@ export const TimerDisplay = React.memo(function TimerDisplay() {
       <div
         className="timer-display tracking-tight"
         style={{
-          fontSize: `${timerFontSize}px`,
+          // ponytail: cap at viewport width so big sizes never overflow phones
+          fontSize: `min(${timerFontSize}px, 22vw)`,
           fontWeight,
           fontFamily: `'${fontFamily}', sans-serif`,
           color: 'var(--t-fg)',

@@ -43,6 +43,12 @@ export const TaskList = React.memo(function TaskList() {
   const colorPickerRef = useRef<HTMLDivElement>(null)
   const editFormRef = useRef<HTMLDivElement>(null)
   const taskListRef = useRef<HTMLDivElement>(null)
+  // Long-press → open color picker on touch (no right-click on mobile)
+  const longPressTimer = useRef<number | null>(null)
+  const longPressFired = useRef(false)
+  const cancelLongPress = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+  }
 
   const TASK_COLORS = [
     '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
@@ -144,20 +150,6 @@ export const TaskList = React.memo(function TaskList() {
       setActiveTaskId(task.id)
       setTimeRemaining(task.duration)
       useStore.setState({ timerStatus: 'running' })
-      setKbIndex(null)
-    }
-
-    // R = Reset timer (only when paused or idle)
-    if ((e.key === 'r' || e.key === 'R') && timerStatus !== 'running') {
-      e.preventDefault()
-      // Determine which task's duration to reset to
-      const targetTask =
-        kbIndex !== null ? tasks[kbIndex] : tasks.find((t) => t.id === activeTaskId)
-      if (targetTask) {
-        setActiveTaskId(targetTask.id)
-        setTimeRemaining(targetTask.duration)
-        setTimerStatus('idle')
-      }
       setKbIndex(null)
     }
 
@@ -305,8 +297,23 @@ export const TaskList = React.memo(function TaskList() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
+                      // Suppress the click that ends a long-press (don't toggle completed)
+                      if (longPressFired.current) { longPressFired.current = false; return }
                       updateTask(task.id, { completed: !task.completed })
                     }}
+                    onPointerDown={(e) => {
+                      if (isBreak) return
+                      longPressFired.current = false
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      longPressTimer.current = window.setTimeout(() => {
+                        longPressFired.current = true
+                        setColorPickerPos({ x: rect.left, y: rect.bottom + 6 })
+                        setColorPickerId((cur) => (cur === task.id ? null : task.id))
+                      }, 450)
+                    }}
+                    onPointerUp={cancelLongPress}
+                    onPointerLeave={cancelLongPress}
+                    onPointerCancel={cancelLongPress}
                     onContextMenu={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
