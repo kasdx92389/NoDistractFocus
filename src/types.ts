@@ -20,20 +20,11 @@ export interface Task {
   createdAt: number
 }
 
-// ─── Preset ──────────────────────────────────────
-export interface Preset {
-  id: string
-  name: string
-  description: string
-  builtIn: boolean
-  settings: AppSettings
-}
-
 // ─── Session Record ──────────────────────────────
 export interface SessionRecord {
-  date: string // YYYY-MM-DD
+  date: string // YYYY-MM-DD, local time
   completedSessions: number
-  totalFocusMinutes: number
+  totalFocusMinutes: number // breaks excluded
   modes: Record<string, number>
 }
 
@@ -41,7 +32,7 @@ export interface SessionRecord {
 export interface KeyBinding {
   action: string
   label: string
-  key: string
+  key: string // '' = unbound
 }
 
 // ─── App Settings ────────────────────────────────
@@ -52,15 +43,16 @@ export interface AppSettings {
   fontWeight: number
   darkMode: boolean
   darkModeWhenRunning: boolean
+  showProgressRing: boolean
 
   // Behavior
   autoStartNextSession: boolean
   autoStartBreaks: boolean
   loopMode: boolean
-  countUp: boolean
   soundEnabled: boolean
   soundVolume: number
   desktopNotifications: boolean
+  keepScreenAwake: boolean
 
   // Focus Mode
   focusColoredBackground: boolean

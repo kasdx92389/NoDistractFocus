@@ -1,110 +1,85 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useStore } from '../store'
+import { playChime, notify, isBreakName } from '../util'
 
-const TICK_INTERVAL = 250 // ms — balanced accuracy vs performance
+const TICK_INTERVAL = 250 // ms — smooth enough for a seconds display, cheap enough to ignore
 
 export function useTimer() {
-  // Only subscribe to timerStatus reactively — everything else read imperatively
+  // Only subscribe to timerStatus reactively; everything else is read imperatively.
   const timerStatus = useStore((s) => s.timerStatus)
 
-  const lastTickRef = useRef<number>(0)
-  const intervalRef = useRef<number | null>(null)
-  const autoStartRef = useRef<number | null>(null)
-
-  // Cleanup auto-start timeout on unmount
   useEffect(() => {
-    return () => {
-      if (autoStartRef.current) clearTimeout(autoStartRef.current)
-    }
-  }, [])
+    if (timerStatus !== 'running') return
 
-  useEffect(() => {
-    if (timerStatus !== 'running') {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-      return
-    }
+    let done = false
 
-    lastTickRef.current = performance.now()
-
-    intervalRef.current = window.setInterval(() => {
-      const now = performance.now()
-      const delta = (now - lastTickRef.current) / 1000
-      lastTickRef.current = now
-
+    const tick = () => {
+      if (done) return
       const s = useStore.getState()
-      const mode = s.activeMode()
-      const countUp = s.settings.countUp
-
-      if (countUp) {
-        const next = s.timeRemaining + delta
-        if (next >= mode.duration) {
-          s.setTimeRemaining(mode.duration)
-          s.setTimerStatus('idle')
-          handleComplete()
-        } else {
-          s.setTimeRemaining(next)
-        }
-      } else {
-        const next = s.timeRemaining - delta
-        if (next <= 0) {
-          s.setTimeRemaining(0)
-          s.setTimerStatus('idle')
-          handleComplete()
-        } else {
-          s.setTimeRemaining(next)
-        }
+      if (s.timerStatus !== 'running') return
+      if (!s.endAt) {
+        // Running without a deadline should be unreachable, but treating it as
+        // "already expired" would fire the alarm instantly. Re-anchor instead.
+        s.setTimerStatus('running')
+        return
       }
-    }, TICK_INTERVAL)
+
+      // Read the deadline, never accumulate deltas: background tabs throttle
+      // intervals to ~1/s and a locked phone suspends them entirely, so a
+      // delta-summing timer drifts by exactly the time it was asleep.
+      const left = (s.endAt - Date.now()) / 1000
+      if (left > 0) {
+        // Write straight to state, not through setTimeRemaining: that action
+        // re-derives endAt from the value it is handed, which would push the
+        // deadline forward by the microseconds between the two Date.now()
+        // readings on every single tick.
+        useStore.setState({ timeRemaining: left })
+        return
+      }
+      done = true
+      s.setTimeRemaining(0)
+      s.setTimerStatus('idle')
+      handleComplete()
+    }
+
+    const id = window.setInterval(tick, TICK_INTERVAL)
+    // Coming back to a throttled or frozen tab: settle up immediately rather
+    // than showing a stale time until the next tick.
+    const onVisible = () => { if (!document.hidden) tick() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      done = true
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
     }
   }, [timerStatus])
 }
 
 function handleComplete() {
   const s = useStore.getState()
+  const mode = s.activeMode()
+  const task = s.activeTaskId ? s.tasks.find((t) => t.id === s.activeTaskId) : undefined
 
-  // Play alarm sound
-  if (s.settings.soundEnabled) {
-    try {
-      const ctx = new AudioContext()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      gain.gain.value = s.settings.soundVolume * 0.3
-      osc.frequency.value = 830
-      osc.type = 'sine'
-      osc.start()
-      setTimeout(() => { osc.frequency.value = 1046 }, 150)
-      setTimeout(() => { osc.frequency.value = 830 }, 300)
-      setTimeout(() => { osc.frequency.value = 1046 }, 450)
-      setTimeout(() => { osc.stop(); ctx.close() }, 700)
-    } catch { /* Web Audio not available */ }
+  // What just finished — a task run overrides the mode rotation.
+  const finishedLabel = task ? task.title : mode.name
+  const finishedMinutes = (task ? task.duration : mode.duration) / 60
+  const finishedIsBreak = task ? task.type !== 'task' : isBreakName(mode.name)
+
+  if (s.settings.soundEnabled) playChime(s.settings.soundVolume)
+  if (s.settings.desktopNotifications) {
+    notify('NoDistractFocus', `${finishedLabel} — ${finishedIsBreak ? 'break over' : 'session complete'}!`)
   }
 
-  // Desktop notification
-  if (s.settings.desktopNotifications && Notification.permission === 'granted') {
-    new Notification('NoDistractFocus', {
-      body: `${s.activeMode().name} session complete!`,
-    })
-  }
-
-  // Increment session & record
   s.incrementSession()
-  s.addSessionRecord()
+  s.addSessionRecord({ minutes: finishedMinutes, modeId: mode.id, isBreak: finishedIsBreak })
 
   // ─── Schedule mode: active task queue ───
-  if (s.activeTaskId) {
-    const task = s.tasks.find((t) => t.id === s.activeTaskId)
-    if (task) {
-      s.updateTask(task.id, { completed: true, sessions: task.sessions + 1 })
-    }
-    // Auto-advance to next incomplete task
+  if (task) {
+    s.updateTask(task.id, { completed: true, sessions: task.sessions + 1 })
+    // Let the completion state land before picking the next task off the queue.
     setTimeout(() => useStore.getState().advanceToNextTask(), 100)
     return
   }
@@ -115,17 +90,14 @@ function handleComplete() {
   const nextIdx = (currentIdx + 1) % modes.length
 
   if (!s.settings.loopMode && nextIdx === 0) {
-    s.setTimerStatus('idle')
     s.setTimeRemaining(modes[currentIdx].duration)
     return
   }
 
-  const nextMode = modes[nextIdx]
-  const isBreak = nextMode.name.toLowerCase().includes('break') || nextMode.name.toLowerCase().includes('rest')
-  const shouldAutoStart = isBreak ? s.settings.autoStartBreaks : s.settings.autoStartNextSession
+  const nextIsBreak = isBreakName(modes[nextIdx].name)
+  const shouldAutoStart = nextIsBreak ? s.settings.autoStartBreaks : s.settings.autoStartNextSession
 
   s.skipToNext()
-
   if (shouldAutoStart) {
     setTimeout(() => useStore.getState().setTimerStatus('running'), 50)
   }

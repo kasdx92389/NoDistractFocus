@@ -1,11 +1,49 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { AppSettings, Task, TaskType, Preset, SessionRecord, TimerStatus, TimerMode } from './types'
-import { defaultSettings, defaultKeyBindings, builtInPresets } from './defaults'
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
+import type { AppSettings, Task, TaskType, SessionRecord, TimerStatus, TimerMode } from './types'
+import { defaultSettings, defaultKeyBindings } from './defaults'
+import { todayKey } from './util'
 
 // ─── Helpers ─────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
-const todayKey = () => new Date().toISOString().split('T')[0]
+
+// A running timer is defined by an absolute deadline, not by accumulated ticks.
+// Background tabs throttle intervals and a locked phone stops them entirely, so
+// anything derived from tick deltas silently loses time.
+const deadline = (seconds: number) => Date.now() + seconds * 1000
+
+/**
+ * localStorage writer that coalesces bursts.
+ * The ticker updates `timeRemaining` 4x/second; without this, every tick
+ * serialised the whole store (settings + tasks + sessions) to disk.
+ */
+function coalescingStorage(delayMs: number): StateStorage {
+  let pending: { key: string; value: string } | null = null
+  let handle: ReturnType<typeof setTimeout> | undefined
+
+  const flush = () => {
+    clearTimeout(handle)
+    handle = undefined
+    if (!pending) return
+    try { localStorage.setItem(pending.key, pending.value) } catch { /* quota / private mode */ }
+    pending = null
+  }
+
+  if (typeof window !== 'undefined') {
+    // Never lose the last write when the tab is backgrounded or closed.
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flush() })
+  }
+
+  return {
+    getItem: (key) => { try { return localStorage.getItem(key) } catch { return null } },
+    setItem: (key, value) => {
+      pending = { key, value }
+      if (handle === undefined) handle = setTimeout(flush, delayMs)
+    },
+    removeItem: (key) => { pending = null; try { localStorage.removeItem(key) } catch { /* ignore */ } },
+  }
+}
 
 // ─── Store Shape ─────────────────────────────────
 interface AppStore {
@@ -17,6 +55,8 @@ interface AppStore {
   // Timer runtime state
   timerStatus: TimerStatus
   timeRemaining: number
+  /** Epoch ms the current run ends at. Only meaningful while running. */
+  endAt: number
   sessionCount: number
   setTimerStatus: (s: TimerStatus) => void
   setTimeRemaining: (t: number) => void
@@ -38,29 +78,23 @@ interface AppStore {
   updateTask: (id: string, partial: Partial<Task>) => void
   deleteTask: (id: string) => void
   clearTasks: () => void
+  reorderTasks: (from: number, to: number) => void
   activeTaskId: string | null
   setActiveTaskId: (id: string | null) => void
   advanceToNextTask: () => void
+  skipActiveTask: () => void
   startTaskQueue: () => void
-
-  // Presets
-  presets: Preset[]
-  addPreset: (name: string, description: string) => void
-  deletePreset: (id: string) => void
-  loadPreset: (id: string) => void
-  importPreset: (json: string) => void
-  exportPreset: (id: string) => string | null
+  startTaskAt: (index: number) => void
 
   // Session tracking
   sessions: SessionRecord[]
-  addSessionRecord: () => void
+  addSessionRecord: (opts: { minutes: number; modeId: string; isBreak: boolean }) => void
   resetStats: () => void
 
   // Timer modes management
   addTimerMode: (mode: Omit<TimerMode, 'id'>) => void
   updateTimerMode: (id: string, partial: Partial<TimerMode>) => void
   deleteTimerMode: (id: string) => void
-  reorderTimerModes: (modes: TimerMode[]) => void
   setActiveModeIndex: (i: number) => void
 
   // Key bindings
@@ -84,29 +118,57 @@ export const useStore = create<AppStore>()(
         settings: { ...defaultSettings },
         timeRemaining: defaultSettings.timerModes[0].duration,
         timerStatus: 'idle' as TimerStatus,
+        endAt: 0,
+        activeTaskId: null,
       }),
 
       // ─── Timer State ───────────────────────
       timerStatus: 'idle' as TimerStatus,
       timeRemaining: defaultSettings.timerModes[0].duration,
+      endAt: 0,
       sessionCount: 0,
-      setTimerStatus: (timerStatus) => set({ timerStatus }),
-      setTimeRemaining: (timeRemaining) => set({ timeRemaining }),
+
+      setTimerStatus: (timerStatus) =>
+        set((s) => {
+          if (timerStatus === 'running') {
+            return { timerStatus, endAt: deadline(s.timeRemaining) }
+          }
+          // Leaving the running state: settle timeRemaining off the deadline so a
+          // pause landing between ticks doesn't round away up to a quarter second.
+          const settled = s.timerStatus === 'running' && s.endAt
+            ? Math.max(0, (s.endAt - Date.now()) / 1000)
+            : s.timeRemaining
+          return { timerStatus, timeRemaining: settled, endAt: 0 }
+        }),
+
+      setTimeRemaining: (timeRemaining) =>
+        set((s) =>
+          // While running the deadline is the source of truth. Re-deriving it here
+          // is a no-op for the ticker (endAt maps back to itself) but re-anchors it
+          // when something external jumps the clock.
+          s.timerStatus === 'running'
+            ? { timeRemaining, endAt: deadline(timeRemaining) }
+            : { timeRemaining }
+        ),
+
       incrementSession: () => set((s) => ({ sessionCount: s.sessionCount + 1 })),
+
       resetTimer: () => {
-        const mode = get().activeMode()
-        set({ timerStatus: 'idle', timeRemaining: mode.duration })
+        const s = get()
+        const task = s.activeTaskId ? s.tasks.find((t) => t.id === s.activeTaskId) : undefined
+        set({ timerStatus: 'idle', timeRemaining: task ? task.duration : s.activeMode().duration, endAt: 0 })
       },
+
       skipToNext: () => {
         const s = get()
         const modes = s.settings.timerModes
         const nextIndex = (s.settings.activeModeIndex + 1) % modes.length
-        const nextMode = modes[nextIndex]
-        set((prev) => ({
-          settings: { ...prev.settings, activeModeIndex: nextIndex },
-          timeRemaining: nextMode.duration,
+        set({
+          settings: { ...s.settings, activeModeIndex: nextIndex },
+          timeRemaining: modes[nextIndex].duration,
           timerStatus: 'idle',
-        }))
+          endAt: 0,
+        })
       },
 
       // ─── Focus Mode ───────────────────────
@@ -135,89 +197,80 @@ export const useStore = create<AppStore>()(
         set((s) => ({
           tasks: s.tasks.filter((t) => t.id !== id),
           activeTaskId: s.activeTaskId === id ? null : s.activeTaskId,
+          // Deleting the task the clock is counting down would leave it orphaned.
+          ...(s.activeTaskId === id ? { timerStatus: 'idle' as TimerStatus, endAt: 0 } : {}),
         })),
-      clearTasks: () => set({ tasks: [], activeTaskId: null }),
+      clearTasks: () => set({ tasks: [], activeTaskId: null, timerStatus: 'idle', endAt: 0 }),
+      reorderTasks: (from, to) =>
+        set((s) => {
+          if (from === to || from < 0 || to < 0 || from >= s.tasks.length || to >= s.tasks.length) return s
+          const tasks = [...s.tasks]
+          const [moved] = tasks.splice(from, 1)
+          tasks.splice(to, 0, moved)
+          return { tasks }
+        }),
       setActiveTaskId: (activeTaskId) => set({ activeTaskId }),
+
       advanceToNextTask: () => {
         const s = get()
-        const incomplete = s.tasks.filter((t) => !t.completed)
-        const currentIdx = incomplete.findIndex((t) => t.id === s.activeTaskId)
-        const nextTask = incomplete[currentIdx + 1]
-        if (nextTask) {
-          set({
-            activeTaskId: nextTask.id,
-            timeRemaining: nextTask.duration,
-            timerStatus: 'running',
-          })
-        } else {
-          // No more tasks — stop
-          set({ activeTaskId: null, timerStatus: 'idle' })
+        // The task that just finished is already marked complete, so the first
+        // remaining incomplete task is the next one to run.
+        const next = s.tasks.find((t) => !t.completed)
+        if (!next) {
+          set({ activeTaskId: null, timerStatus: 'idle', endAt: 0 })
+          return
         }
+        set({
+          activeTaskId: next.id,
+          timeRemaining: next.duration,
+          timerStatus: 'running',
+          endAt: deadline(next.duration),
+        })
       },
+
+      skipActiveTask: () => {
+        const { activeTaskId, updateTask, advanceToNextTask } = get()
+        // Mark it done first, otherwise advanceToNextTask picks the same task again.
+        if (activeTaskId) updateTask(activeTaskId, { completed: true })
+        advanceToNextTask()
+      },
+
       startTaskQueue: () => {
-        const s = get()
-        const incomplete = s.tasks.filter((t) => !t.completed)
-        if (incomplete.length === 0) return
-        const first = incomplete[0]
+        const first = get().tasks.find((t) => !t.completed)
+        if (!first) return
         set({
           activeTaskId: first.id,
           timeRemaining: first.duration,
           timerStatus: 'running',
+          endAt: deadline(first.duration),
         })
       },
 
-      // ─── Presets ───────────────────────────
-      presets: [...builtInPresets],
-      addPreset: (name, description) => {
-        const currentSettings = { ...get().settings }
-        set((s) => ({
-          presets: [
-            ...s.presets,
-            { id: uid(), name, description, builtIn: false, settings: currentSettings },
-          ],
-        }))
-      },
-      deletePreset: (id) =>
-        set((s) => ({
-          presets: s.presets.filter((p) => p.id !== id || p.builtIn),
-        })),
-      loadPreset: (id) => {
-        const preset = get().presets.find((p) => p.id === id)
-        if (preset) {
-          set({
-            settings: { ...preset.settings },
-            timeRemaining: preset.settings.timerModes[preset.settings.activeModeIndex]?.duration ?? 25 * 60,
-            timerStatus: 'idle',
+      startTaskAt: (index) =>
+        set((s) => {
+          const task = s.tasks[index]
+          if (!task) return s
+          // Everything above the chosen task counts as done, everything from it on doesn't.
+          const tasks = s.tasks.map((t, i) => {
+            const completed = i < index
+            return t.completed === completed ? t : { ...t, completed }
           })
-        }
-      },
-      importPreset: (json) => {
-        try {
-          const data = JSON.parse(json)
-          if (data.name && data.settings) {
-            set((s) => ({
-              presets: [
-                ...s.presets,
-                { id: uid(), name: data.name, description: data.description || '', builtIn: false, settings: data.settings },
-              ],
-            }))
+          return {
+            tasks,
+            activeTaskId: task.id,
+            timeRemaining: task.duration,
+            timerStatus: 'running' as TimerStatus,
+            endAt: deadline(task.duration),
           }
-        } catch {
-          // Invalid JSON, ignore
-        }
-      },
-      exportPreset: (id) => {
-        const preset = get().presets.find((p) => p.id === id)
-        if (!preset) return null
-        return JSON.stringify({ name: preset.name, description: preset.description, settings: preset.settings }, null, 2)
-      },
+        }),
 
       // ─── Session Tracking ──────────────────
       sessions: [],
-      addSessionRecord: () => {
+      addSessionRecord: ({ minutes, modeId, isBreak }) => {
         const key = todayKey()
-        const mode = get().activeMode()
         set((s) => {
+          // A break is a completed session but not focus time.
+          const focus = isBreak ? 0 : minutes
           const existing = s.sessions.find((r) => r.date === key)
           if (existing) {
             return {
@@ -226,8 +279,8 @@ export const useStore = create<AppStore>()(
                   ? {
                       ...r,
                       completedSessions: r.completedSessions + 1,
-                      totalFocusMinutes: r.totalFocusMinutes + mode.duration / 60,
-                      modes: { ...r.modes, [mode.id]: (r.modes[mode.id] || 0) + 1 },
+                      totalFocusMinutes: r.totalFocusMinutes + focus,
+                      modes: { ...r.modes, [modeId]: (r.modes[modeId] || 0) + 1 },
                     }
                   : r
               ),
@@ -236,12 +289,7 @@ export const useStore = create<AppStore>()(
           return {
             sessions: [
               ...s.sessions,
-              {
-                date: key,
-                completedSessions: 1,
-                totalFocusMinutes: mode.duration / 60,
-                modes: { [mode.id]: 1 },
-              },
+              { date: key, completedSessions: 1, totalFocusMinutes: focus, modes: { [modeId]: 1 } },
             ],
           }
         })
@@ -253,10 +301,7 @@ export const useStore = create<AppStore>()(
         set((s) => ({
           settings: {
             ...s.settings,
-            timerModes: [
-              ...s.settings.timerModes,
-              { ...mode, id: uid() },
-            ],
+            timerModes: [...s.settings.timerModes, { ...mode, id: uid() }],
           },
         })),
       updateTimerMode: (id, partial) =>
@@ -265,8 +310,10 @@ export const useStore = create<AppStore>()(
             m.id === id ? { ...m, ...partial } : m
           )
           const activeMode = newModes[s.settings.activeModeIndex]
-          // Sync timeRemaining when active mode duration changes and timer is idle
-          const shouldSync = activeMode && activeMode.id === id && partial.duration !== undefined && s.timerStatus === 'idle'
+          // Sync timeRemaining when the active mode's duration changes while idle.
+          const shouldSync =
+            activeMode?.id === id && partial.duration !== undefined &&
+            s.timerStatus === 'idle' && !s.activeTaskId
           return {
             settings: { ...s.settings, timerModes: newModes },
             ...(shouldSync ? { timeRemaining: partial.duration! } : {}),
@@ -276,25 +323,23 @@ export const useStore = create<AppStore>()(
         set((s) => {
           const modes = s.settings.timerModes.filter((m) => m.id !== id)
           if (modes.length === 0) return s
+          const activeModeIndex = Math.min(s.settings.activeModeIndex, modes.length - 1)
+          const idle = s.timerStatus === 'idle' && !s.activeTaskId
           return {
-            settings: {
-              ...s.settings,
-              timerModes: modes,
-              activeModeIndex: Math.min(s.settings.activeModeIndex, modes.length - 1),
-            },
+            settings: { ...s.settings, timerModes: modes, activeModeIndex },
+            ...(idle ? { timeRemaining: modes[activeModeIndex].duration } : {}),
           }
         }),
-      reorderTimerModes: (modes) =>
-        set((s) => ({ settings: { ...s.settings, timerModes: modes } })),
       setActiveModeIndex: (i) => {
         const modes = get().settings.timerModes
-        if (i >= 0 && i < modes.length) {
-          set((s) => ({
-            settings: { ...s.settings, activeModeIndex: i },
-            timeRemaining: modes[i].duration,
-            timerStatus: 'idle',
-          }))
-        }
+        if (i < 0 || i >= modes.length) return
+        set((s) => ({
+          settings: { ...s.settings, activeModeIndex: i },
+          timeRemaining: modes[i].duration,
+          timerStatus: 'idle',
+          endAt: 0,
+          activeTaskId: null,
+        }))
       },
 
       // ─── Key Bindings ──────────────────────
@@ -303,7 +348,8 @@ export const useStore = create<AppStore>()(
           settings: {
             ...s.settings,
             keyBindings: s.settings.keyBindings.map((k) =>
-              k.action === action ? { ...k, key } : k
+              // A key drives one action only; clear it wherever else it was bound.
+              k.action === action ? { ...k, key } : k.key === key ? { ...k, key: '' } : k
             ),
           },
         })),
@@ -320,14 +366,12 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: 'nodistractfocus-storage',
-      version: 6,
-      migrate: (persisted: any, version: number) => {
-        let data = persisted ?? {}
+      version: 7,
+      storage: createJSONStorage(() => coalescingStorage(1000)),
+      migrate: (persisted: unknown, version: number) => {
+        const data = { ...(persisted as Record<string, any> ?? {}) }
         if (version < 2) {
-          data = {
-            ...data,
-            settings: { ...defaultSettings, ...(data?.settings ?? {}) },
-          }
+          data.settings = { ...defaultSettings, ...(data.settings ?? {}) }
         }
         if (version < 3) {
           data.tasks = (data.tasks || []).map((t: any) => ({
@@ -337,11 +381,7 @@ export const useStore = create<AppStore>()(
           }))
         }
         if (version < 4) {
-          const s = data.settings || {}
-          data.settings = {
-            ...s,
-            darkModeWhenRunning: s.darkModeWhenRunning ?? false,
-          }
+          data.settings = { ...data.settings, darkModeWhenRunning: data.settings?.darkModeWhenRunning ?? false }
         }
         if (version < 5) {
           const kb = data.settings?.keyBindings || []
@@ -352,49 +392,55 @@ export const useStore = create<AppStore>()(
             ),
           }
         }
-        // Ensure all default keybindings exist (fill missing ones)
-        if (data.settings?.keyBindings) {
-          const existing = data.settings.keyBindings as any[]
-          const defaults = [
-            { action: 'toggle', label: 'Start / Pause', key: ' ' },
-            { action: 'reset', label: 'Reset Timer', key: 'r' },
-            { action: 'focus', label: 'Focus Mode', key: 'f' },
-            { action: 'skip', label: 'Skip to Next', key: 'n' },
-            { action: 'settings', label: 'Open Settings', key: 'Ctrl+ ' },
-          ]
-          for (const d of defaults) {
-            if (!existing.find((b: any) => b.action === d.action)) {
-              existing.push(d)
-            }
-          }
-          data.settings.keyBindings = existing
+        if (version < 7) {
+          // Presets never shipped a UI, yet every built-in was serialised on each write.
+          delete data.presets
+          // countUp was unreachable and its timer path was broken; drop the flag.
+          if (data.settings) delete data.settings.countUp
         }
         return data
       },
       partialize: (state) => ({
         settings: state.settings,
         tasks: state.tasks,
-        presets: state.presets,
         sessions: state.sessions,
         sessionCount: state.sessionCount,
         timeRemaining: state.timeRemaining,
         activeTaskId: state.activeTaskId,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return
-        // Ensure all default keybindings exist at runtime
-        const kb = state.settings.keyBindings
-        let changed = false
-        for (const d of defaultKeyBindings) {
-          if (!kb.find((b) => b.action === d.action)) {
-            kb.push(d)
-            changed = true
-          }
+      merge: (persisted, current) => {
+        // Deep-merge settings so a field added in a later release is never `undefined`
+        // for someone rehydrating an older payload, and repair anything that would
+        // make the app unrenderable.
+        const p = (persisted ?? {}) as Partial<AppStore>
+        const settings: AppSettings = { ...defaultSettings, ...(p.settings ?? {}) }
+
+        if (!Array.isArray(settings.timerModes) || settings.timerModes.length === 0) {
+          settings.timerModes = defaultSettings.timerModes
         }
-        if (changed) {
-          useStore.setState((s) => ({
-            settings: { ...s.settings, keyBindings: [...kb] },
-          }))
+        settings.activeModeIndex = Math.min(
+          Math.max(0, settings.activeModeIndex ?? 0),
+          settings.timerModes.length - 1
+        )
+        const saved = new Map((settings.keyBindings ?? []).map((b) => [b.action, b]))
+        settings.keyBindings = defaultKeyBindings.map((d) => ({ ...d, key: saved.get(d.action)?.key ?? d.key }))
+
+        // A corrupted or hand-edited payload must not render an unusable clock.
+        const restored = Number(p.timeRemaining)
+        const timeRemaining = Number.isFinite(restored) && restored > 0
+          ? restored
+          : settings.timerModes[settings.activeModeIndex].duration
+
+        return {
+          ...current,
+          ...p,
+          settings,
+          timeRemaining,
+          // Runtime-only fields never come back from storage.
+          timerStatus: 'idle' as TimerStatus,
+          endAt: 0,
+          focusMode: false,
+          settingsOpen: false,
         }
       },
     }

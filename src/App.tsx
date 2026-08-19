@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useStore } from './store'
 import { useTimer } from './hooks/useTimer'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCursorHider } from './hooks/useCursorHider'
+import { useWakeLock } from './hooks/useWakeLock'
 import { usePiP } from './hooks/usePiP'
 import { TimerDisplay } from './components/TimerDisplay'
 import { Controls } from './components/Controls'
@@ -10,45 +11,19 @@ import { ModeSelector } from './components/ModeSelector'
 import { TaskList } from './components/TaskList'
 import { SettingsPanel } from './components/SettingsPanel'
 import { PiPTimer } from './components/PiPTimer'
+import { fmtClock, readableOn, unlockAudio } from './util'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faClock, faExpand, faGear, faSun, faMoon } from '@fortawesome/free-solid-svg-icons'
+
+const PIP_W = 220
+const PIP_H = 130
 
 function App() {
   useTimer()
   useKeyboardShortcuts()
   useCursorHider()
   const { openPiP, closePiP, isPiP, floating } = usePiP()
-
-  // ─── Draggable PiP ───────────────────────────
-  const PIP_W = 220
-  const PIP_H = 130
-  const [pipPos, setPipPos] = useState<{ x: number; y: number } | null>(null)
-  const dragData = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null)
-
-  useEffect(() => {
-    if (!floating) setPipPos(null)
-  }, [floating])
-
-  const getDefaultPos = () => ({
-    x: window.innerWidth - PIP_W - 16,
-    y: window.innerHeight - PIP_H - 24,
-  })
-
-  const onPipPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId)
-    const pos = pipPos ?? getDefaultPos()
-    dragData.current = { startX: e.clientX, startY: e.clientY, initX: pos.x, initY: pos.y }
-  }
-
-  const onPipPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragData.current) return
-    const x = Math.max(0, Math.min(window.innerWidth - PIP_W, dragData.current.initX + e.clientX - dragData.current.startX))
-    const y = Math.max(0, Math.min(window.innerHeight - PIP_H, dragData.current.initY + e.clientY - dragData.current.startY))
-    setPipPos({ x, y })
-  }
-
-  const onPipPointerUp = () => { dragData.current = null }
 
   // Use granular selectors to minimize re-renders
   const darkMode = useStore((s) => s.settings.darkMode)
@@ -62,15 +37,69 @@ function App() {
   const sessionCount = useStore((s) => s.sessionCount)
   const activeTaskId = useStore((s) => s.activeTaskId)
   const tasks = useStore((s) => s.tasks)
+  const keepScreenAwake = useStore((s) => s.settings.keepScreenAwake)
+  const focusColoredBg = useStore((s) => s.settings.focusColoredBackground)
+  const timerModes = useStore((s) => s.settings.timerModes)
+  const darkModeWhenRunning = useStore((s) => s.settings.darkModeWhenRunning)
 
   const activeMode = useStore((s) => s.activeMode())
   const activeTask = useMemo(() => tasks.find((t) => t.id === activeTaskId), [tasks, activeTaskId])
 
-  // Focus mode
-  const focusColoredBg = useStore((s) => s.settings.focusColoredBackground)
-  const timerModes = useStore((s) => s.settings.timerModes)
+  // A phone that dims and locks mid-session defeats the point of the timer.
+  useWakeLock(keepScreenAwake && timerStatus === 'running')
 
-  // Pick color based on active task type (break/longbreak use different timer mode colors)
+  // Web Audio starts suspended until a real gesture; arm it on the first one so
+  // the end-of-session chime isn't silently dropped on mobile.
+  useEffect(() => {
+    const arm = () => unlockAudio()
+    window.addEventListener('pointerdown', arm, { once: true })
+    window.addEventListener('keydown', arm, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', arm)
+      window.removeEventListener('keydown', arm)
+    }
+  }, [])
+
+  // ─── Draggable PiP ───────────────────────────
+  const [pipPos, setPipPos] = useState<{ x: number; y: number } | null>(null)
+  const dragData = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null)
+
+  useEffect(() => {
+    if (!floating) setPipPos(null)
+  }, [floating])
+
+  const clampPip = useCallback((x: number, y: number) => ({
+    x: Math.max(0, Math.min(window.innerWidth - PIP_W, x)),
+    y: Math.max(0, Math.min(window.innerHeight - PIP_H, y)),
+  }), [])
+
+  // Rotating a phone or resizing a window can strand the widget off-screen.
+  useEffect(() => {
+    if (!floating) return
+    const onResize = () => setPipPos((p) => (p ? clampPip(p.x, p.y) : p))
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
+  }, [floating, clampPip])
+
+  const onPipPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const pos = pipPos ?? { x: window.innerWidth - PIP_W - 16, y: window.innerHeight - PIP_H - 24 }
+    dragData.current = { startX: e.clientX, startY: e.clientY, initX: pos.x, initY: pos.y }
+  }
+
+  const onPipPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragData.current
+    if (!d) return
+    setPipPos(clampPip(d.initX + e.clientX - d.startX, d.initY + e.clientY - d.startY))
+  }
+
+  const onPipPointerUp = () => { dragData.current = null }
+
+  // Pick color based on active task type (break/longbreak use their timer mode colors)
   const resolvedColor = useMemo(() => {
     if (activeTask) {
       if (activeTask.type === 'break') {
@@ -87,15 +116,26 @@ function App() {
   }, [activeTask, activeMode.color, timerModes])
 
   const focusColor = focusColoredBg ? resolvedColor : (darkMode ? '#0a0b10' : '#f0f2f5')
-  const focusFg = focusColoredBg ? 'rgba(255,255,255,0.9)' : 'var(--t-fg)'
-
-  const darkModeWhenRunning = useStore((s) => s.settings.darkModeWhenRunning)
+  // White on a light mode colour (amber, yellow) is unreadable — derive it.
+  const focusFg = focusColoredBg ? readableOn(resolvedColor) : null
+  const focusFgDim = focusFg
+    ? (focusFg === '#ffffff' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)')
+    : 'var(--t-fg-dim)'
+  // Only override the token when there is a real colour to override it with:
+  // `--t-fg: var(--t-fg)` is self-referential, which CSS discards entirely.
+  const focusStyle: React.CSSProperties = {
+    fontFamily: `'${fontFamily}', 'Noto Sans Thai', sans-serif`,
+    ...(focusFg ? { ['--t-fg' as string]: focusFg } : {}),
+  }
 
   // Set data-theme on html element + auto dark when running
   useEffect(() => {
     const shouldBeDark = darkMode || (darkModeWhenRunning && timerStatus === 'running')
     document.documentElement.setAttribute('data-theme', shouldBeDark ? 'dark' : 'light')
-  }, [darkMode, darkModeWhenRunning, timerStatus])
+    // Keep the mobile browser/PWA chrome in step with the page.
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.setAttribute('content', focusMode ? focusColor : (shouldBeDark ? '#0f1117' : '#f0f2f5'))
+  }, [darkMode, darkModeWhenRunning, timerStatus, focusMode, focusColor])
 
   // Fullscreen on focus mode
   useEffect(() => {
@@ -106,17 +146,30 @@ function App() {
     }
   }, [focusMode])
 
-  // Document title update
+  // Leaving fullscreen by any other route (Esc, browser UI) must leave focus mode too.
   useEffect(() => {
-    if (timerStatus === 'running' || timerStatus === 'paused') {
-      const total = Math.ceil(timeRemaining)
-      const mins = Math.floor(total / 60)
-      const secs = total % 60
-      document.title = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} — ${activeMode.name}`
-    } else {
-      document.title = 'NoDistractFocus'
+    const onChange = () => {
+      const inFocus = useStore.getState().focusMode
+      if (!document.fullscreenElement && inFocus) {
+        useStore.getState().toggleFocusMode()
+      } else if (document.fullscreenElement && !inFocus) {
+        // Focus mode was toggled off before the async request resolved; without
+        // this the page stays fullscreen with no way back out.
+        document.exitFullscreen?.().catch(() => {})
+      }
     }
-  }, [timerStatus, timeRemaining, activeMode.name])
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  // Document title — recomputed only when the displayed second changes, not on
+  // every 250ms tick.
+  const clock = fmtClock(timeRemaining)
+  useEffect(() => {
+    document.title = timerStatus === 'idle'
+      ? 'NoDistractFocus'
+      : `${clock} — ${activeTask ? activeTask.title : activeMode.name}`
+  }, [timerStatus, clock, activeMode.name, activeTask])
 
   // Task done toast
   const [taskDoneText, setTaskDoneText] = useState<string | null>(null)
@@ -124,18 +177,22 @@ function App() {
   useEffect(() => {
     const prev = prevTasksRef.current
     prevTasksRef.current = tasks
-    for (const t of tasks) {
+    const justDone = tasks.find((t) => {
       const old = prev.find((p) => p.id === t.id)
-      if (old && !old.completed && t.completed) {
-        setTaskDoneText(t.title)
-        const timer = setTimeout(() => setTaskDoneText(null), 2000)
-        return () => clearTimeout(timer)
-      }
-    }
+      return old && !old.completed && t.completed
+    })
+    if (!justDone) return
+    setTaskDoneText(justDone.title)
+    const timer = setTimeout(() => setTaskDoneText(null), 2000)
+    return () => clearTimeout(timer)
   }, [tasks])
 
-  // Background
-  const bgStyle: React.CSSProperties = { backgroundColor: 'var(--t-bg)' }
+  const iconBtn = 'w-10 h-10 rounded-xl flex items-center justify-center transition-all'
+  const iconBtnStyle: React.CSSProperties = {
+    background: 'var(--t-bg-input)',
+    color: 'var(--t-fg-muted)',
+    border: '1px solid var(--t-border)',
+  }
 
   // ─── Render ──────────────────────────────────
   return (<>
@@ -148,8 +205,12 @@ function App() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35, ease: 'easeInOut', backgroundColor: { duration: 0.6 } }}
           className="fixed inset-0 flex flex-col items-center justify-center cursor-pointer overflow-hidden"
-          style={{ fontFamily: `'${fontFamily}', 'Noto Sans Thai', sans-serif`, ['--t-fg' as string]: focusFg }}
+          style={focusStyle}
           onClick={toggleFocusMode}
+          role="button"
+          tabIndex={0}
+          aria-label="Exit focus mode"
+          onKeyDown={(e) => { if (e.key === 'Enter') toggleFocusMode() }}
         >
           {/* Animated glow ring behind timer (only with colored bg) */}
           {focusColoredBg && (
@@ -177,8 +238,8 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2, duration: 0.3 }}
-            className="mt-4 text-xs font-semibold uppercase tracking-widest"
-            style={{ color: focusColoredBg ? 'rgba(255,255,255,0.4)' : 'var(--t-fg-dim)' }}
+            className="mt-4 text-xs font-semibold uppercase tracking-widest text-center px-6"
+            style={{ color: focusFgDim }}
           >
             #{sessionCount} {activeTask ? activeTask.title : activeMode.name}
           </motion.div>
@@ -193,10 +254,10 @@ function App() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35, ease: 'easeInOut' }}
-          className="min-h-screen flex flex-col transition-colors duration-300"
-          style={{ ...bgStyle, fontFamily: `'${fontFamily}', 'Noto Sans Thai', sans-serif` }}
+          className="app-shell flex flex-col transition-colors duration-300"
+          style={{ backgroundColor: 'var(--t-bg)', fontFamily: `'${fontFamily}', 'Noto Sans Thai', sans-serif` }}
         >
-      {/* Top bar - clean like reference */}
+      {/* Top bar */}
       <header
         className="flex items-center justify-between gap-2 px-3 sm:px-6 py-3"
         style={{ background: 'var(--t-bg-card)', borderBottom: '1px solid var(--t-border)' }}
@@ -217,12 +278,10 @@ function App() {
           {/* Theme toggle */}
           <button
             onClick={toggleDarkMode}
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
-            style={{
-              background: 'var(--t-bg-input)',
-              color: 'var(--t-fg-muted)',
-              border: '1px solid var(--t-border)',
-            }}
+            className={iconBtn}
+            style={iconBtnStyle}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={darkMode ? 'Light mode' : 'Dark mode'}
           >
             <FontAwesomeIcon icon={darkMode ? faSun : faMoon} />
           </button>
@@ -230,12 +289,15 @@ function App() {
           {/* Picture-in-Picture button */}
           <button
             onClick={openPiP}
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
+            className={iconBtn}
             style={{
+              ...iconBtnStyle,
               background: isPiP ? '#3b82f6' : 'var(--t-bg-input)',
               color: isPiP ? '#fff' : 'var(--t-fg-muted)',
-              border: `1px solid ${isPiP ? '#3b82f6' : 'var(--t-border)'}`,
+              borderColor: isPiP ? '#3b82f6' : 'var(--t-border)',
             }}
+            aria-label="Picture in Picture"
+            aria-pressed={isPiP}
             title="Picture in Picture"
           >
             <svg viewBox="0 0 24 18" width="17" height="13" fill="none" aria-hidden="true">
@@ -248,12 +310,9 @@ function App() {
           <button
             id="btn-focus"
             onClick={toggleFocusMode}
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
-            style={{
-              background: 'var(--t-bg-input)',
-              color: 'var(--t-fg-muted)',
-              border: '1px solid var(--t-border)',
-            }}
+            className={iconBtn}
+            style={iconBtnStyle}
+            aria-label="Enter focus mode"
             title="Focus Mode (F)"
           >
             <FontAwesomeIcon icon={faExpand} size="sm" />
@@ -263,12 +322,10 @@ function App() {
           <button
             id="btn-settings"
             onClick={() => setSettingsOpen(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
-            style={{
-              background: 'var(--t-bg-input)',
-              color: 'var(--t-fg-muted)',
-              border: '1px solid var(--t-border)',
-            }}
+            className={iconBtn}
+            style={iconBtnStyle}
+            aria-label="Open settings"
+            title="Settings (Ctrl+Space)"
           >
             <FontAwesomeIcon icon={faGear} />
           </button>
@@ -282,7 +339,7 @@ function App() {
         <Controls />
 
         {/* Session counter */}
-        <div className="text-sm" style={{ color: 'var(--t-fg-dim)' }}>
+        <div className="text-sm" style={{ color: 'var(--t-fg-dim)' }} title="Completed sessions">
           #{sessionCount}
         </div>
 
@@ -293,10 +350,10 @@ function App() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="text-sm"
+              className="text-sm text-center px-4"
               style={{ color: 'var(--t-fg-muted)' }}
             >
-              Time to focus!
+              {activeTask.type === 'task' ? 'Time to focus!' : 'Take a break'} · {activeTask.title}
             </motion.div>
           )}
         </AnimatePresence>
@@ -310,7 +367,7 @@ function App() {
       {/* Footer hint */}
       <footer className="text-center py-4 pip-footer-hide" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
         <p className="text-xs mb-2" style={{ color: 'var(--t-fg-dim)' }}>
-          Press <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]" style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}>Space</kbd> to start · <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]" style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}>F</kbd> focus · <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]" style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}>Ctrl+Space</kbd> settings
+          Press <Kbd>Space</Kbd> to start · <Kbd>F</Kbd> focus · <Kbd>Ctrl+Space</Kbd> settings
         </p>
         <p className="text-[10px]" style={{ color: 'var(--t-fg-faint)' }}>
           Powered by <span className="font-medium">draftDotDev</span>
@@ -333,6 +390,7 @@ function App() {
         onPointerDown={onPipPointerDown}
         onPointerMove={onPipPointerMove}
         onPointerUp={onPipPointerUp}
+        onPointerCancel={onPipPointerUp}
         style={{
           position: 'fixed',
           ...(pipPos
@@ -356,17 +414,30 @@ function App() {
   </>)
 }
 
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd
+      className="px-1.5 py-0.5 rounded font-mono text-[10px]"
+      style={{ background: 'var(--t-bg-card)', border: '1px solid var(--t-border)', color: 'var(--t-fg-muted)' }}
+    >
+      {children}
+    </kbd>
+  )
+}
+
 function TaskDoneToast({ text }: { text: string | null }) {
   return (
     <AnimatePresence>
       {text && (
         <motion.div
+          role="status"
+          aria-live="polite"
           initial={{ opacity: 0, y: 40, scale: 0.8 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -20, scale: 0.9 }}
           transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-3 rounded-2xl shadow-2xl"
-          style={{ background: '#22c55e', color: '#fff' }}
+          className="fixed left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-3 rounded-2xl shadow-2xl"
+          style={{ background: '#22c55e', color: '#fff', bottom: 'max(2rem, env(safe-area-inset-bottom))' }}
         >
           <motion.span
             initial={{ rotate: 0 }}
@@ -376,9 +447,9 @@ function TaskDoneToast({ text }: { text: string | null }) {
           >
             🎉
           </motion.span>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-bold">Task Done!</div>
-            <div className="text-xs opacity-80">{text}</div>
+            <div className="text-xs opacity-80 truncate max-w-[12rem]">{text}</div>
           </div>
           <motion.div
             initial={{ scale: 0 }}

@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { fmtClock, readableOn } from '../util'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlay, faPause, faXmark } from '@fortawesome/free-solid-svg-icons'
 
@@ -26,12 +27,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
     [tasks, activeTaskId]
   )
 
-  const displayTime = useMemo(() => {
-    const total = Math.ceil(timeRemaining)
-    const mins = Math.floor(total / 60)
-    const secs = total % 60
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-  }, [timeRemaining])
+  const displayTime = useMemo(() => fmtClock(timeRemaining), [timeRemaining])
 
   const running = timerStatus === 'running'
   const modeColor = activeMode.color ?? '#3b82f6'
@@ -39,7 +35,8 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
 
   const useFocusColor = focusMode && focusColoredBg
   const pipBg    = useFocusColor ? modeColor : 'var(--t-bg, #0f1117)'
-  const pipText  = useFocusColor ? '#ffffff'  : 'var(--t-fg, #e8eaed)'
+  // White on a light mode colour (amber, yellow) is unreadable.
+  const pipText  = useFocusColor ? readableOn(modeColor) : 'var(--t-fg, #e8eaed)'
 
   const handleToggle = () => setTimerStatus(running ? 'paused' : 'running')
 
@@ -90,6 +87,7 @@ export function PiPTimer({ onClose }: PiPTimerProps) {
           lineHeight: 1,
           color: pipText,
           letterSpacing: '-0.025em',
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {displayTime}
