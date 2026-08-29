@@ -343,21 +343,6 @@ function App() {
           #{sessionCount}
         </div>
 
-        {/* Active task indicator */}
-        <AnimatePresence>
-          {activeTask && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="text-sm text-center px-4"
-              style={{ color: 'var(--t-fg-muted)' }}
-            >
-              {activeTask.type === 'task' ? 'Time to focus!' : 'Take a break'} · {activeTask.title}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Task list */}
         <div className="w-full max-w-lg">
           <TaskList />
