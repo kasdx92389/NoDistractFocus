@@ -278,6 +278,10 @@ export const TaskList = React.memo(function TaskList() {
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: task.completed ? 0.45 : 1, y: 0 }}
                 exit={{ opacity: 0, x: -20, height: 0 }}
+                // Tween, not the default spring: a spring overshoots past its
+                // target and the bottom row briefly pokes out of the scroll
+                // container, flashing a scrollbar.
+                transition={{ type: 'tween', duration: 0.18 }}
                 className="group flex items-center gap-2.5 px-3 py-3 rounded-xl cursor-pointer transition-colors"
                 data-interactive="task"
                 style={{
