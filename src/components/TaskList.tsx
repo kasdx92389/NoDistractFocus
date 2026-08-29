@@ -248,7 +248,7 @@ export const TaskList = React.memo(function TaskList() {
           style={{ background: '#3b82f6' }}
           aria-label="Run task queue"
         >
-          <FontAwesomeIcon icon={faPlay} size="xs" /> Run queue
+          <FontAwesomeIcon icon={faPlay} size="xs" />
         </motion.button>
       )}
 
