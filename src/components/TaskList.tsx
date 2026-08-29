@@ -244,7 +244,7 @@ export const TaskList = React.memo(function TaskList() {
           animate={{ opacity: 1 }}
           whileTap={{ scale: 0.97 }}
           onClick={startTaskQueue}
-          className="w-full mb-4 py-2.5 rounded-xl text-white flex items-center justify-center gap-2 text-sm font-medium"
+          className="w-full mb-4 h-10 rounded-xl text-white flex items-center justify-center gap-2 text-sm font-medium"
           style={{ background: '#3b82f6' }}
           aria-label="Run task queue"
         >
@@ -266,7 +266,7 @@ export const TaskList = React.memo(function TaskList() {
       )}
 
       {/* Task list */}
-      <div ref={taskListRef} className="flex flex-col gap-2 overflow-y-auto pr-1" style={{ maxHeight: '22rem' }}>
+      <div ref={taskListRef} className="flex flex-col gap-2 overflow-y-auto px-1" style={{ maxHeight: '22rem' }}>
         <AnimatePresence initial={false}>
           {tasks.map((task, idx) => {
             const isActive = activeTaskId === task.id
