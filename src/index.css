@@ -94,6 +94,14 @@ body {
 }
 
 /* ─── Mobile improvements ─────────────────── */
+/*
+ * Pointer capability, not width: a narrow desktop window still has a mouse and
+ * a real PiP window, while a wide tablet has neither.
+ */
+@media (hover: none), (pointer: coarse) {
+  .desktop-only { display: none !important; }
+}
+
 @media (max-width: 640px) {
   /* Keyboard shortcut hint is meaningless without a keyboard */
   .pip-footer-hide p:first-child { display: none; }

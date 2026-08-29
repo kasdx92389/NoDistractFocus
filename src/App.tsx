@@ -289,7 +289,7 @@ function App() {
           {/* Picture-in-Picture button */}
           <button
             onClick={openPiP}
-            className={iconBtn}
+            className={`${iconBtn} desktop-only`}
             style={{
               ...iconBtnStyle,
               background: isPiP ? '#3b82f6' : 'var(--t-bg-input)',
